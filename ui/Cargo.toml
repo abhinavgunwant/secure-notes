@@ -5,5 +5,5 @@ edition = "2021"
 authors = [ "Abhinav Gunwant" ]
 
 [dependencies]
-iced = { git = "https://github.com/iced-rs/iced.git" }
+iced = { git = "https://github.com/iced-rs/iced.git", features = [ "lazy" ] }
 

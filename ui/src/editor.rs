@@ -1,10 +1,10 @@
-use iced::{ Task, Element, Fill, widget::{ text_editor, text_editor::Content, Column, column } };
+use iced::{ widget::{ column, text_editor, text_editor::{ Action, Content } }, Element, Fill, Task };
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone)]
 pub enum EditorState {
     #[default]
     Uninitialized,
-    StartupComplete,
+    ActionPerformed(Action),
 }
 
 #[derive(Debug, Default)]
@@ -23,7 +23,9 @@ impl Editor {
                 Task::none()
             }
 
-            EditorState::StartupComplete => {
+            EditorState::ActionPerformed(action) => {
+                self.content.perform(action);
+
                 Task::none()
             }
         }
@@ -32,6 +34,7 @@ impl Editor {
     pub fn view(&self) -> Element<EditorState> {
         column![
             text_editor(&self.content)
+                .on_action(EditorState::ActionPerformed)
                 .height(Fill)
         ]
         .into()
