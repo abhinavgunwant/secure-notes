@@ -14,14 +14,15 @@
 /// - Vault only created when user clicks on "Next" button on the second page
 
 use iced::{
-    Element, Center, Fill,
-    widget::{ column, text, container, Space, button },
-    alignment::Horizontal,
+    Element, Center, Fill, Padding,
+    widget::{ column, row, text, container, Space, button, text_input, TextInput },
 };
 
 #[derive(Debug, Clone)]
 pub enum Message {
     Page(Page),
+    VaultNameChanged(String),
+    VaultPasswordChanged(String),
 }
 
 #[derive(Default, Debug, Clone)]
@@ -35,6 +36,8 @@ enum Page {
 #[derive(Debug, Default)]
 pub struct FirstStart {
     current_page: Page,
+    vault_name: String,
+    vault_password: String,
 }
 
 impl FirstStart {
@@ -70,6 +73,7 @@ impl FirstStart {
                 let get_started_button = container(
                     button(text("Get Started"))
                         .style(button::primary)
+                        .on_press(Message::Page(Page::P2))
                 )
                     .width(Fill)
                     .align_x(Center);
@@ -90,7 +94,57 @@ impl FirstStart {
             }
 
             Page::P2 => {
-                column![ text!("WIP") ].into()
+                let title = text("Create a Vault")
+                    .width(Fill)
+                    .size(48)
+                    .align_x(Center);
+
+                let name_row = container(
+                    text_input("Vault Name", &self.vault_name)
+                        .width(300)
+                        .on_input(Message::VaultNameChanged)
+                )
+                    .align_x(Center)
+                    .align_y(Center)
+                    .width(Fill);
+
+                let password_row = container(
+                    TextInput::new("Vault Password", &self.vault_password)
+                        .secure(true)
+                        .width(300)
+                        .on_input(Message::VaultPasswordChanged)
+                )
+                    .align_x(Center)
+                    .align_y(Center)
+                    .width(Fill);
+
+                let control_row_padding = Padding::from([ 50, 200 ]);
+
+                column![
+                    Space::new(Fill, 100),
+                    title,
+                    Space::new(Fill, 20),
+                    name_row,
+                    Space::new(Fill, 20),
+                    password_row,
+                    column![
+                        container(
+                            button(text("Create Vault"))
+                                .style(button::primary)
+                                .on_press(Message::Page(Page::P3))
+                        )
+                            .align_x(Center)
+                            .width(Fill),
+                        Space::new(Fill, 10),
+                        container(
+                            button(text("Back"))
+                                .style(button::secondary)
+                                .on_press(Message::Page(Page::P1))
+                        )
+                            .align_x(Center)
+                            .width(Fill),
+                    ].padding(control_row_padding),
+                ].into()
             }
 
             Page::P3 => {
@@ -100,6 +154,19 @@ impl FirstStart {
     }
 
     pub fn update(&mut self, message: Message) {
+        match message {
+            Message::Page(p) => {
+                self.current_page = p;
+            }
+
+            Message::VaultNameChanged(updated_vault_name) => {
+                self.vault_name = updated_vault_name;
+            }
+
+            Message::VaultPasswordChanged(updated_vault_password) => {
+                self.vault_password = updated_vault_password;
+            }
+        }
     }
 }
 
