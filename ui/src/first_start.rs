@@ -13,8 +13,12 @@
 /// the third a.k.a "Done" page).
 /// - Vault only created when user clicks on "Next" button on the second page
 
+use std::{
+    env::args, thread::sleep, time::Duration, process::{ Command, exit },
+};
+
 use iced::{
-    Element, Center, Fill, Padding,
+    Element, Center, Fill, Padding, Color,
     widget::{ column, row, text, container, Space, button, text_input, TextInput },
 };
 
@@ -23,6 +27,9 @@ pub enum Message {
     Page(Page),
     VaultNameChanged(String),
     VaultPasswordChanged(String),
+    CreateVault,
+    Restart,
+    Exit,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -36,6 +43,8 @@ enum Page {
 #[derive(Debug, Default)]
 pub struct FirstStart {
     current_page: Page,
+    password_error: bool,
+    name_error: bool,
     vault_name: String,
     vault_password: String,
 }
@@ -99,16 +108,33 @@ impl FirstStart {
                     .size(48)
                     .align_x(Center);
 
-                let name_row = container(
+                let name_row: Element<'_, Message>;
+
+                let password_row: Element<'_, Message>;
+
+                let name_input = container(
                     text_input("Vault Name", &self.vault_name)
                         .width(300)
                         .on_input(Message::VaultNameChanged)
                 )
                     .align_x(Center)
                     .align_y(Center)
-                    .width(Fill);
+                    .width(Fill)
+                    .into();
 
-                let password_row = container(
+                if self.name_error {
+                    name_row = column![
+                        name_input,
+                        text("Vault name must be between 4 and 32 characters.")
+                            .width(Fill)
+                            .align_x(Center)
+                            .color(Color::new(0.9, 0.0, 0.0, 1.0)),
+                    ].into();
+                } else {
+                    name_row = name_input;
+                }
+
+                let password_input = container(
                     TextInput::new("Vault Password", &self.vault_password)
                         .secure(true)
                         .width(300)
@@ -116,7 +142,20 @@ impl FirstStart {
                 )
                     .align_x(Center)
                     .align_y(Center)
-                    .width(Fill);
+                    .width(Fill)
+                    .into();
+
+                if self.password_error {
+                    password_row = column![
+                        password_input,
+                        text("Vault password must be between 8 and 32 characters.")
+                            .width(Fill)
+                            .align_x(Center)
+                            .color(Color::new(0.9, 0.0, 0.0, 1.0)),
+                    ].into();
+                } else {
+                    password_row = password_input;
+                }
 
                 let control_row_padding = Padding::from([ 50, 200 ]);
 
@@ -131,7 +170,7 @@ impl FirstStart {
                         container(
                             button(text("Create Vault"))
                                 .style(button::primary)
-                                .on_press(Message::Page(Page::P3))
+                                .on_press(Message::CreateVault)
                         )
                             .align_x(Center)
                             .width(Fill),
@@ -148,7 +187,46 @@ impl FirstStart {
             }
 
             Page::P3 => {
-                column![ text!("WIP") ].into()
+                let title = text("Done!")
+                    .width(Fill)
+                    .size(48)
+                    .align_x(Center);
+
+                let success_text = text("Your new vault has been successfully created.")
+                    .width(Fill)
+                    .align_x(Center);
+
+                let next_step_text = text("Click on restart to restart the app.")
+                    .width(Fill)
+                    .align_x(Center);
+
+                let get_started_button = container(
+                    button(text("Restart"))
+                        .style(button::primary)
+                        .on_press(Message::Restart)
+                )
+                    .width(Fill)
+                    .align_x(Center);
+
+                let exit_button = container(
+                    button(text("Exit"))
+                        .style(button::secondary)
+                        .on_press(Message::Exit)
+                )
+                    .width(Fill)
+                    .align_x(Center);
+
+                column![
+                    title,
+                    Space::new(Fill, 10),
+                    success_text,
+                    Space::new(Fill, 10),
+                    next_step_text,
+                    Space::new(Fill, 10),
+                    get_started_button,
+                    Space::new(Fill, 10),
+                    exit_button,
+                ].into()
             }
         }
     }
@@ -161,10 +239,49 @@ impl FirstStart {
 
             Message::VaultNameChanged(updated_vault_name) => {
                 self.vault_name = updated_vault_name;
+                self.name_error = false;
             }
 
             Message::VaultPasswordChanged(updated_vault_password) => {
                 self.vault_password = updated_vault_password;
+                self.password_error = false;
+            }
+
+            Message::CreateVault => {
+                if self.vault_name.len() > 32 || self.vault_name.len() < 4 {
+                    self.name_error = true;
+                } else {
+                    self.name_error = false;
+                }
+
+                if self.vault_password.len() > 32 || self.vault_name.len() < 8 {
+                    self.password_error = true;
+                } else {
+                    self.password_error = false;
+                }
+
+                if !(self.name_error && self.password_error) {
+                    self.current_page = Page::P3;
+                }
+            }
+
+            Message::Restart => {
+                let program = args().collect::<String>();
+
+                println!("Opening: {}", program);
+
+                match Command::new(program).spawn() {
+                    Ok(_) => {}
+                    Err(e) => { eprintln!("{}", e); }
+                }
+
+                sleep(Duration::from_millis(1000));
+
+                exit(0);
+            }
+
+            Message::Exit => {
+                exit(0);
             }
         }
     }
