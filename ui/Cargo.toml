@@ -7,4 +7,6 @@ authors = [ "Abhinav Gunwant" ]
 [dependencies]
 iced = { git = "https://github.com/iced-rs/iced.git", features = [ "lazy" ] }
 dirs-next = "2.0.0"
+flexbuffers = "2.0.0"
+serde = "1.0.209"
 

@@ -1,7 +1,7 @@
 use iced::{
     keyboard, widget::{
         column, container, pane_grid, responsive, text, text_editor, text_editor::{Action, Content}
-    }, Element, Fill, Subscription, Task
+    }, Element, Fill, Subscription,
 };
 
 #[derive(Debug, Default, Clone)]

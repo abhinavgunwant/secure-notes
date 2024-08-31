@@ -19,7 +19,7 @@ use std::{
 
 use iced::{
     Element, Center, Fill, Padding, Color,
-    widget::{ column, row, text, container, Space, button, text_input, TextInput },
+    widget::{ column, text, container, Space, button, text_input, TextInput },
 };
 
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ pub enum Message {
 }
 
 #[derive(Default, Debug, Clone)]
-enum Page {
+pub enum Page {
     #[default]
     P1,
     P2,
