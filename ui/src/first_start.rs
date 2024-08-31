@@ -22,6 +22,8 @@ use iced::{
     widget::{ column, text, container, Space, button, text_input, TextInput },
 };
 
+use crate::utils::create_vault;
+
 #[derive(Debug, Clone)]
 pub enum Message {
     Page(Page),
@@ -261,7 +263,13 @@ impl FirstStart {
                 }
 
                 if !(self.name_error && self.password_error) {
-                    self.current_page = Page::P3;
+                    match create_vault(self.vault_name.clone(), self.vault_password.clone(), true) {
+                        Ok(_) => {
+                            self.current_page = Page::P3;
+                        }
+
+                        Err(_) => {}
+                    }
                 }
             }
 

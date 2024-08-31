@@ -1,4 +1,4 @@
-use std::{ fs::File, io::Write, path::{ Path, PathBuf } };
+use std::{ fs::{ File, create_dir_all }, io::Write, path::{ Path, PathBuf } };
 
 use dirs_next::data_local_dir;
 use serde::{ Serialize, Deserialize };
@@ -100,29 +100,56 @@ pub fn is_first_start() -> bool {
 ///     + info
 ///     + index
 ///     + notes\
-pub fn create_vault(name: String, password: String) -> Result<(), String> {
+pub fn create_vault(name: String, password: String, first_start: bool) -> Result<(), String> {
+    println!("getting local dir");
+
     match get_local_dir() {
         Some(mut path) => {
             path.push("vaults");
             path.push(&name);
+            println!("got local dir: {}", path.to_str().unwrap());
+
+            if first_start {
+                match create_secure_notes_directories(&path) {
+                    Ok(()) => {
+                        println!("Created secure notes directories on the first start");
+                    }
+                    Err(e) => { return Err(e); }
+                }
+            }
 
             match create_vault_info_file(&path, name.clone(), password.clone()) {
-                Ok(()) => {}
+                Ok(()) => {
+                    println!("Info file created");
+                }
                 Err(e) => {
                     return Err(format!("Could not create info file: {}", e));
                 }
             }
 
             match create_vault_index_file(&path) {
-                Ok(()) => {}
+                Ok(()) => {
+                    println!("Index file created");
+                }
                 Err(e) => {
                     return Err(format!("Could not create index file: {}", e));
+                }
+            }
+
+            match create_vault_notes_directory(&path) {
+                Ok(()) => {
+                    println!("vault ntoes directory created");
+                }
+
+                Err(e) => {
+                    return Err(format!("Erro while creating notes directory: {}", e));
                 }
             }
 
             let def_v_fpath = get_default_vault_file_path();
 
             if !def_v_fpath.is_empty() {
+                println!("info file created");
                 // TODO: change the default to the current vault
                 Ok(())
             } else {
@@ -146,7 +173,7 @@ pub fn create_vault_info_file(path: &PathBuf, name: String, password: String) ->
     let info_path = if let Some(p) = info_path_buf.to_str() { p } else { "" };
 
     if !info_path.is_empty() {
-        return match File::open(info_path) {
+        return match File::create(info_path) {
             Ok(mut file) => {
                 let info = VaultInfo { name, password };
                 let mut serializer = FlexbufferSerializer::new();
@@ -158,9 +185,14 @@ pub fn create_vault_info_file(path: &PathBuf, name: String, password: String) ->
                     }
                 }
 
-                file.write(serializer.view());
+                match file.write(serializer.view()) {
+                    Ok(_) => Ok(()),
 
-                Ok(())
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        Err(String::from(""))
+                    }
+                }
             }
 
             Err(e) => {
@@ -191,5 +223,41 @@ pub fn create_vault_index_file(path: &PathBuf) -> Result<(), String> {
     }
 
     Err(String::from("Invalid path"))
+}
+
+pub fn create_secure_notes_directories(path: &PathBuf) -> Result<(), String> {
+    match path.to_str() {
+        Some(p) => {
+            match create_dir_all(p) {
+                Ok(_) => Ok(()),
+
+                Err(e) => {
+                    eprintln!("{}", e);
+                    Err(String::from("Error creating the directories"))
+                }
+            }
+        }
+
+        None => Err(String::from("Error in path name"))
+    }
+}
+
+pub fn create_vault_notes_directory(path: &PathBuf) -> Result<(), String> {
+    let mut dir_path_buf = path.clone();
+    dir_path_buf.push("notes");
+
+    match dir_path_buf.to_str() {
+        Some(p) => {
+            match create_dir_all(p) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    eprintln!("{}", e);
+                    Err(String::from("Couldn't create notes directory"))
+                }
+            }
+        }
+
+        None => Err(String::from("Invalid path string"))
+    }
 }
 
