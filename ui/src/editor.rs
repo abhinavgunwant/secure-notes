@@ -1,8 +1,12 @@
 use iced::{
-    keyboard, widget::{
-        column, container, pane_grid, responsive, text, text_editor, text_editor::{Action, Content}
-    }, Element, Fill, Subscription,
+    keyboard::{ on_key_press, key::{ Named, Key }, Modifiers, },
+    widget::{
+        column, container, pane_grid, responsive, text, text_editor, text_editor::{Action, Content},
+        text_input,
+    }, Element, Fill, Subscription, Center, Background, Color,
 };
+
+use crate::utils::VaultIndexEntry;
 
 #[derive(Debug, Default, Clone)]
 pub enum EditorMessage {
@@ -15,6 +19,7 @@ pub enum EditorMessage {
     CloseFocused,
     ToggleExplorer,
     Clicked(pane_grid::Pane),
+    Save,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -31,6 +36,8 @@ pub struct Pane {
 }
 
 pub struct Editor {
+    pub opened_file: Option<String>,
+    pub explorer_files: Vec<VaultIndexEntry>,
     pub content: Content,
     pub panes: pane_grid::State<Pane>,
     pub panes_created: usize,
@@ -66,6 +73,8 @@ impl Editor {
         }
 
         Self {
+            opened_file: None,
+            explorer_files: vec![],
             content: Content::default(),
             panes: pane_state,
             panes_created: 0,
@@ -118,56 +127,127 @@ impl Editor {
             }
 
             EditorMessage::ToggleExplorer => {
-                println!("toggling explorer");
-
                 if self.show_explorer {
-                    return;
+                    println!("hiding explorer");
+                    let panes = self.panes.clone();
+
+                    for (pane, state) in panes.iter() {
+                        if state.pane_type == PaneType::Explorer {
+                            if let Some((_, sibling)) = self.panes.close(*pane) {
+                                self.focused_pane = Some(sibling);
+                            }
+                        }
+                    }
+                } else {
+                    println!("showing explorer");
                 }
 
-                if let Some(pane) = self.focused_pane {
-                    println!("1");
-                    let result = self.panes.split(
-                        pane_grid::Axis::Vertical,
-                        pane,
-                        Pane::new(self.panes_created, PaneType::Explorer)
-                    );
+                self.show_explorer = !self.show_explorer;
 
-                    if let Some((new_pane, _)) = result {
-                        println!("2");
-                        self.focused_pane = Some(new_pane);
-                        self.panes_created += 1;
-                     }
-                }
+                // if let Some(pane) = self.focused_pane {
+                //     println!("1");
+                //     let result = self.panes.split(
+                //         pane_grid::Axis::Vertical,
+                //         pane,
+                //         Pane::new(self.panes_created, PaneType::Explorer)
+                //     );
+
+                //     if let Some((new_pane, _)) = result {
+                //         println!("2");
+                //         self.focused_pane = Some(new_pane);
+                //         self.panes_created += 1;
+                //      }
+                // }
             }
 
             EditorMessage::Uninitialized => {}
+
+            EditorMessage::Save => {
+                // let text = self.content.text();
+            }
         }
     }
 
     pub fn view(&self) -> Element<EditorMessage> {
-        let pane_grid = pane_grid::PaneGrid::new(&self.panes, |id, pane, is_maximized|{
-            let is_focused = self.focused_pane == Some(id);
+        let pane_grid = pane_grid::PaneGrid::new(&self.panes, |_id, pane, _is_maximized|{
+            // let is_focused = self.focused_pane == Some(id);
 
-            let pane_title = if pane.pane_type == PaneType::TextEditor {
-                "Editor"
-            } else {
-                "Explorer"
-            };
-
-            pane_grid::Content::new(responsive(move |size|{
+            let mut pane_grid_content = pane_grid::Content::new(responsive(move |_size|{
                 if pane.pane_type == PaneType::TextEditor {
-                    container(column![
-                        text_editor(&self.content)
-                            .on_action(EditorMessage::ActionPerformed)
-                            .height(Fill)
-                    ])
-                    .into()
+                    let _style = container::Style {
+                        background: Some(Background::Color(Color {
+                            r: 0.054,
+                            g: 0.1,
+                            b: 0.14,
+                            a: 1.0,
+                        })),
+                        ..container::Style::default()
+                    };
+
+                    if self.opened_file == None {
+                        container(column![
+                            text("Select a file from the explorer on the left to view/edit!")
+                                .align_x(Center)
+                                .align_y(Center)
+                                .width(Fill)
+                                .height(Fill)
+                                .center()
+                        ])
+                            .style(move |_| _style)
+                            .into()
+                    } else {
+                        container(column![
+                            text_input("test", "text"),
+                            text_editor(&self.content)
+                                .on_action(EditorMessage::ActionPerformed)
+                                .height(Fill)
+                        ])
+                            .style(move |_| _style)
+                            .into()
+                    }
                 } else {
-                    container(text!("This shows the notes here..."))
-                    .into()
+                    let style = container::Style {
+                        background: Some(Background::Color(Color {
+                            r: 0.05,
+                            g: 0.09,
+                            b: 0.11,
+                            a: 1.0
+                        })),
+                        ..container::Style::default()
+                    };
+
+                    if self.explorer_files.is_empty() {
+                        container(text!("This shows the notes here..."))
+                            .style(move |_| style)
+                            .height(Fill)
+                            .width(Fill)
+                            .align_x(Center)
+                            .align_y(Center)
+                            .into()
+                    } else {
+                        container(text!("WIP"))
+                            .style(move |_| style)
+                            .into()
+                    }
                 }
-            }))
-            .title_bar(pane_grid::TitleBar::new(text!("{}", pane_title)))
+            }));
+
+            if pane.pane_type == PaneType::Explorer {
+                pane_grid_content = pane_grid_content.title_bar(
+                    pane_grid::TitleBar::new(text!("{}", "Explorer"))
+                        .style(|_| container::Style {
+                            background: Some(Background::Color(Color{
+                                r: 0.04,
+                                g: 0.05,
+                                b: 0.07,
+                                a: 1.0,
+                            })),
+                            ..container::Style::default()
+                        })
+                );
+            }
+
+            return pane_grid_content;
         })
         .width(Fill)
         .height(Fill)
@@ -181,14 +261,17 @@ impl Editor {
     }
 
     pub fn subscription(&self) -> Subscription<EditorMessage> {
-        keyboard::on_key_press(|key_code, modifiers|{
-            if !modifiers.command() {
-                return None;
-            }
+        on_key_press(|key_code, modifiers|{
+            match (modifiers, key_code.as_ref()) {
+                (Modifiers::CTRL, Key::Character("s")) => {
+                    // TODO: Save the file
+                    return None;
+                }
 
-            match key_code.as_ref() {
-                keyboard::Key::Character("e") => Some(EditorMessage::ToggleExplorer),
-                _ => None,
+                (Modifiers::CTRL, Key::Character("e")) =>
+                    Some(EditorMessage::ToggleExplorer),
+
+                _ => None
             }
         })
     }

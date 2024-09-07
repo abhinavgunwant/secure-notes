@@ -10,6 +10,19 @@ struct VaultInfo {
     password: String,
 }
 
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct VaultIndexEntry {
+    id: u32,
+    name: String,
+    parent_folder: Option<u32>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct VaultIndex {
+    folders: Vec<VaultIndexEntry>,
+    notes: Vec<VaultIndexEntry>,
+}
+
 pub fn get_local_dir() -> Option<PathBuf> {
     match data_local_dir() {
         Some(mut path) => {
