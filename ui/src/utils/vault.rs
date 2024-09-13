@@ -1,38 +1,14 @@
-use std::{ fs::{ File, create_dir_all }, io::Write, path::{ Path, PathBuf } };
-
-use dirs_next::data_local_dir;
+use std::{ fs::{ File, create_dir_all }, io::Write, path::PathBuf };
 use serde::{ Serialize, Deserialize };
 use flexbuffers::FlexbufferSerializer;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct VaultInfo {
-    name: String,
-    password: String,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct VaultIndexEntry {
-    id: u32,
-    name: String,
-    parent_folder: Option<u32>,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct VaultIndex {
-    folders: Vec<VaultIndexEntry>,
-    notes: Vec<VaultIndexEntry>,
-}
-
-pub fn get_local_dir() -> Option<PathBuf> {
-    match data_local_dir() {
-        Some(mut path) => {
-            path.push("secure-notes");
-            Some(path)
-        }
-
-        None => None,
-    }
-}
+use crate::{
+    types::{
+        vault_index::VaultIndex, vault_index_entry::VaultIndexEntry,
+        vault_info::VaultInfo
+    },
+    utils::{ create_secure_notes_directories, get_local_dir },
+};
 
 // Creates the file that holds the name of the default vault
 pub fn create_default_vault_file(name: &str) -> Result<(), String> {
@@ -86,19 +62,6 @@ pub fn get_default_vault_file_path() -> String {
         }
 
         None => String::default(),
-    }
-}
-
-pub fn is_first_start() -> bool {
-    match get_local_dir() {
-        Some(path) => {
-            match path.to_str() {
-                Some(path_str) => !Path::new(path_str).exists(),
-                None => true,
-            }
-        }
-
-        None => true,
     }
 }
 
@@ -238,22 +201,6 @@ pub fn create_vault_index_file(path: &PathBuf) -> Result<(), String> {
     Err(String::from("Invalid path"))
 }
 
-pub fn create_secure_notes_directories(path: &PathBuf) -> Result<(), String> {
-    match path.to_str() {
-        Some(p) => {
-            match create_dir_all(p) {
-                Ok(_) => Ok(()),
-
-                Err(e) => {
-                    eprintln!("{}", e);
-                    Err(String::from("Error creating the directories"))
-                }
-            }
-        }
-
-        None => Err(String::from("Error in path name"))
-    }
-}
 
 pub fn create_vault_notes_directory(path: &PathBuf) -> Result<(), String> {
     let mut dir_path_buf = path.clone();

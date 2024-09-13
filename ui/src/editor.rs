@@ -6,7 +6,7 @@ use iced::{
     }, Element, Fill, Subscription, Center, Background, Color,
 };
 
-use crate::utils::VaultIndexEntry;
+use crate::types::vault_index_entry::VaultIndexEntry;
 
 #[derive(Debug, Default, Clone)]
 pub enum EditorMessage {

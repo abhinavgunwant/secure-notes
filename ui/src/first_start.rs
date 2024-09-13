@@ -22,7 +22,7 @@ use iced::{
     widget::{ column, text, container, Space, button, text_input, TextInput },
 };
 
-use crate::utils::create_vault;
+use crate::utils::vault::create_vault;
 
 #[derive(Debug, Clone)]
 pub enum Message {

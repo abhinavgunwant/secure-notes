@@ -1,6 +1,7 @@
 mod editor;
 mod utils;
 mod first_start;
+mod types;
 
 use crate::{ editor::Editor, first_start::FirstStart, utils::is_first_start };
 
