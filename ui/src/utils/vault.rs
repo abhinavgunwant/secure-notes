@@ -1,3 +1,16 @@
+///
+/// Contains all the utilities related to vault.
+///
+/// A vault is directory a inside the "vaults" directory in the secure notes
+/// local directory.
+///
+/// It contains:
+/// - And index file named "index". It contains entries that map a note's name
+///     with it's file inside the notes directory.
+/// - An info file named "info". This contains all the information necessary to
+///     decrypt the notes.
+/// - A directory named "notes" that contains all the encrypted notes.
+///
 use std::{ fs::{ File, create_dir_all }, io::Write, path::PathBuf };
 use serde::{ Serialize, Deserialize };
 use flexbuffers::FlexbufferSerializer;
@@ -7,63 +20,11 @@ use crate::{
         vault_index::VaultIndex, vault_index_entry::VaultIndexEntry,
         vault_info::VaultInfo
     },
-    utils::{ create_secure_notes_directories, get_local_dir },
+    utils::{
+        create_secure_notes_directories, get_local_dir,
+        get_default_vault_file_path, create_default_vault_file,
+    },
 };
-
-// Creates the file that holds the name of the default vault
-pub fn create_default_vault_file(name: &str) -> Result<(), String> {
-    let mut file_path = PathBuf::from(get_default_vault_file_path().as_str());
-    file_path.push("default-vault");
-
-    match file_path.to_str() {
-        Some(f_path) => {
-            match File::open(f_path) {
-                Ok(mut file) => {
-                    match file.write(name.as_bytes()) {
-                        Ok(b) => {
-                            if b > 0 {
-                                return Ok(());
-                            }
-
-                            Err(String::from("No bytes written"))
-                        }
-
-                        Err(e) => {
-                            eprintln!("{}", e);
-
-                            Err(String::from("Error while writing file"))
-                        }
-                    }
-                }
-
-                Err(e) => {
-                    eprintln!("{}", e);
-
-                    Err(String::from("Couldn't open file"))
-                }
-            }
-        }
-
-        None => {
-            Err(String::from("Issues with file path"))
-        }
-    }
-}
-
-/// Gets the file path to the file that holds the name of the default vault
-pub fn get_default_vault_file_path() -> String {
-    match get_local_dir() {
-        Some(mut path) => {
-            path.push("default-vault");
-            match path.to_str() {
-                Some(path_str) => String::from(path_str),
-                None => String::default(),
-            }
-        }
-
-        None => String::default(),
-    }
-}
 
 /// Creates vault
 ///
@@ -122,16 +83,22 @@ pub fn create_vault(name: String, password: String, first_start: bool) -> Result
                 }
             }
 
-            let def_v_fpath = get_default_vault_file_path();
+            match get_default_vault_file_path() {
+                Some(def_v_fpath) => {
+                    if !def_v_fpath.is_empty() {
+                        println!("info file created");
+                        // TODO: change the default to the current vault
+                        Ok(())
+                    } else {
+                        match create_default_vault_file(&name) {
+                            Ok(()) => Ok(()),
+                            Err(e) => Err(e),
+                        }
+                    }
+                }
 
-            if !def_v_fpath.is_empty() {
-                println!("info file created");
-                // TODO: change the default to the current vault
-                Ok(())
-            } else {
-                match create_default_vault_file(&name) {
-                    Ok(()) => Ok(()),
-                    Err(e) => Err(e),
+                None => {
+                    Err(String::from("Could not find the default path"))
                 }
             }
         }

@@ -2,11 +2,21 @@ use iced::{
     keyboard::{ on_key_press, key::{ Named, Key }, Modifiers, },
     widget::{
         column, container, pane_grid, responsive, text, text_editor, text_editor::{Action, Content},
-        text_input,
+        text_input, Space, button,
     }, Element, Fill, Subscription, Center, Background, Color,
 };
 
-use crate::types::vault_index_entry::VaultIndexEntry;
+use crate::{
+    types::{ vault_index_entry::VaultIndexEntry, DefaultVaultFileError },
+    utils::get_default_vault_name,
+};
+
+#[derive(Debug, Clone)]
+pub enum EditorScreen {
+    PasswordPrompt,
+    VaultSelectionPrompt,
+    Editor,
+}
 
 #[derive(Debug, Default, Clone)]
 pub enum EditorMessage {
@@ -19,6 +29,8 @@ pub enum EditorMessage {
     CloseFocused,
     ToggleExplorer,
     Clicked(pane_grid::Pane),
+    VaultPasswordChanged(String),
+    VaultPasswordSubmitted,
     Save,
 }
 
@@ -36,6 +48,9 @@ pub struct Pane {
 }
 
 pub struct Editor {
+    pub vault_password: String,
+    pub screen: EditorScreen,
+    pub opened_vault: Option<String>,
     pub opened_file: Option<String>,
     pub explorer_files: Vec<VaultIndexEntry>,
     pub content: Content,
@@ -72,7 +87,45 @@ impl Editor {
             None => {}
         }
 
+        let screen;
+        let opened_vault;
+
+        match get_default_vault_name() {
+            Ok(vault_name) => {
+                screen = EditorScreen::PasswordPrompt;
+                opened_vault= Some(vault_name.clone());
+
+                println!("default vault: {}", vault_name);
+            }
+
+            Err(e) => {
+                match e {
+                    DefaultVaultFileError::OSError(_s) => {
+                        // TODO: show an error message to the user
+                    }
+
+                    DefaultVaultFileError::FirstLineEmpty => {
+                        eprintln!("First line empty!");
+                    }
+
+                    DefaultVaultFileError::VaultDoesNotExist => {
+                        eprintln!("Vault does not exist!");
+                    }
+
+                    DefaultVaultFileError::FileDoesNotExist => {
+                        eprintln!("Default vault file does not exist!");
+                    }
+                }
+
+                screen = EditorScreen::VaultSelectionPrompt;
+                opened_vault = None;
+            }
+        }
+
         Self {
+            vault_password: String::default(),
+            screen,
+            opened_vault,
             opened_file: None,
             explorer_files: vec![],
             content: Content::default(),
@@ -162,6 +215,16 @@ impl Editor {
 
             EditorMessage::Uninitialized => {}
 
+            EditorMessage::VaultPasswordChanged(updated_password) => {
+                self.vault_password = updated_password;
+            }
+
+            EditorMessage::VaultPasswordSubmitted => {
+                // TODO: verify password here...
+
+                self.screen = EditorScreen::Editor;
+            }
+
             EditorMessage::Save => {
                 // let text = self.content.text();
             }
@@ -169,95 +232,152 @@ impl Editor {
     }
 
     pub fn view(&self) -> Element<EditorMessage> {
-        let pane_grid = pane_grid::PaneGrid::new(&self.panes, |_id, pane, _is_maximized|{
-            // let is_focused = self.focused_pane == Some(id);
+        let vault_name;
 
-            let mut pane_grid_content = pane_grid::Content::new(responsive(move |_size|{
-                if pane.pane_type == PaneType::TextEditor {
-                    let _style = container::Style {
-                        background: Some(Background::Color(Color {
-                            r: 0.054,
-                            g: 0.1,
-                            b: 0.14,
-                            a: 1.0,
-                        })),
-                        ..container::Style::default()
-                    };
+        match self.opened_vault.clone() {
+            Some(v_name) => { vault_name = v_name; }
+            None => { vault_name = String::default(); }
+        }
 
-                    if self.opened_file == None {
-                        container(column![
-                            text("Select a file from the explorer on the left to view/edit!")
-                                .align_x(Center)
-                                .align_y(Center)
-                                .width(Fill)
-                                .height(Fill)
-                                .center()
-                        ])
-                            .style(move |_| _style)
-                            .into()
-                    } else {
-                        container(column![
-                            text_input("test", "text"),
-                            text_editor(&self.content)
-                                .on_action(EditorMessage::ActionPerformed)
-                                .height(Fill)
-                        ])
-                            .style(move |_| _style)
-                            .into()
+        let style = container::Style {
+            background: Some(Background::Color(Color {
+                r: 0.05,
+                g: 0.09,
+                b: 0.11,
+                a: 1.0
+            })),
+            ..container::Style::default()
+        };
+
+        match self.screen {
+            EditorScreen::Editor => {
+                let pane_grid = pane_grid::PaneGrid::new(&self.panes, |_id, pane, _is_maximized|{
+                    // let is_focused = self.focused_pane == Some(id);
+
+                    let mut pane_grid_content = pane_grid::Content::new(responsive(move |_size|{
+                        if pane.pane_type == PaneType::TextEditor {
+                            let _style = container::Style {
+                                background: Some(Background::Color(Color {
+                                    r: 0.054,
+                                    g: 0.1,
+                                    b: 0.14,
+                                    a: 1.0,
+                                })),
+                                ..container::Style::default()
+                            };
+                            if self.opened_file == None {
+                                container(column![
+                                    text("Select a file from the explorer on the left to view/edit!")
+                                        .align_x(Center)
+                                        .align_y(Center)
+                                        .width(Fill)
+                                        .height(Fill)
+                                        .center()
+                                ])
+                                    .style(move |_| _style)
+                                    .into()
+                            } else {
+                                container(column![
+                                    text_input("test", "text"),
+                                    text_editor(&self.content)
+                                        .on_action(EditorMessage::ActionPerformed)
+                                        .height(Fill)
+                                ])
+                                    .style(move |_| _style)
+                                    .into()
+                            }
+                        } else {
+
+                            if self.explorer_files.is_empty() {
+                                container(text!("This shows the notes here..."))
+                                    .style(move |_| style)
+                                    .height(Fill)
+                                    .width(Fill)
+                                    .align_x(Center)
+                                    .align_y(Center)
+                                    .into()
+                            } else {
+                                container(text!("WIP"))
+                                    .style(move |_| style)
+                                    .into()
+                            }
+                        }
+                    }));
+
+
+                    if pane.pane_type == PaneType::Explorer {
+                        pane_grid_content = pane_grid_content.title_bar(
+                            pane_grid::TitleBar::new(text!("Vault: {}", vault_name))
+                                .style(|_| container::Style {
+                                    background: Some(Background::Color(Color{
+                                        r: 0.04,
+                                        g: 0.05,
+                                        b: 0.07,
+                                        a: 1.0,
+                                    })),
+                                    ..container::Style::default()
+                                })
+                        );
                     }
-                } else {
-                    let style = container::Style {
-                        background: Some(Background::Color(Color {
-                            r: 0.05,
-                            g: 0.09,
-                            b: 0.11,
-                            a: 1.0
-                        })),
-                        ..container::Style::default()
-                    };
 
-                    if self.explorer_files.is_empty() {
-                        container(text!("This shows the notes here..."))
-                            .style(move |_| style)
-                            .height(Fill)
-                            .width(Fill)
-                            .align_x(Center)
-                            .align_y(Center)
-                            .into()
-                    } else {
-                        container(text!("WIP"))
-                            .style(move |_| style)
-                            .into()
-                    }
-                }
-            }));
+                    return pane_grid_content;
+                })
+                .width(Fill)
+                .height(Fill)
+                .on_click(EditorMessage::Clicked)
+                .on_resize(10, EditorMessage::Resized);
 
-            if pane.pane_type == PaneType::Explorer {
-                pane_grid_content = pane_grid_content.title_bar(
-                    pane_grid::TitleBar::new(text!("{}", "Explorer"))
-                        .style(|_| container::Style {
-                            background: Some(Background::Color(Color{
-                                r: 0.04,
-                                g: 0.05,
-                                b: 0.07,
-                                a: 1.0,
-                            })),
-                            ..container::Style::default()
-                        })
-                );
+                container(pane_grid)
+                    .width(Fill)
+                    .height(Fill)
+                    .into()
             }
 
-            return pane_grid_content;
-        })
-        .width(Fill)
-        .height(Fill)
-        .on_click(EditorMessage::Clicked)
-        .on_resize(10, EditorMessage::Resized);
+            EditorScreen::VaultSelectionPrompt => {
+                container(column![
+                    text("Select a vault:")
+                        .align_x(Center)
+                        .width(Fill)
+                ])
+                    .into()
+            }
 
-        container(pane_grid)
-            .width(Fill)
-            .height(Fill)
-            .into()
+            EditorScreen::PasswordPrompt => {
+                let vault_name;
+
+                match self.opened_vault.clone() {
+                    Some(v_name) => { vault_name = v_name; }
+                    None => { vault_name = String::default(); }
+                }
+
+                container(column![
+                    Space::new(Fill, 100),
+                    text!("Enter Password for Vault \"{}\"", vault_name)
+                        .align_x(Center)
+                        .width(Fill),
+                    Space::new(Fill, 16),
+                    container(
+                        text_input("", &self.vault_password) 
+                            .secure(true)
+                            .width(300)
+                            .on_input(EditorMessage::VaultPasswordChanged)
+                    )
+                        .align_x(Center)
+                        .width(Fill),
+                    Space::new(Fill, 16),
+                    container(
+                        button(text("Open Vault"))
+                            .on_press(EditorMessage::VaultPasswordSubmitted)
+                    )
+                        .align_x(Center)
+                        .width(Fill),
+                ])
+                    .style(move |_| style)
+                    .width(Fill)
+                    .height(Fill)
+                    .into()
+            }
+        }
     }
 
     pub fn subscription(&self) -> Subscription<EditorMessage> {
