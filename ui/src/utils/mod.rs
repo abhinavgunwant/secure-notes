@@ -29,12 +29,28 @@ pub fn get_local_dir() -> Option<PathBuf> {
     }
 }
 
+/// Checks if vault exists.
+///
+/// Does this by checking if a directory with the vault name exists inside the
+/// "vaults" directory in the secure-notes local directory and also checks if
+/// files "index" and "info" are also present inside the vault directory.
 pub fn vault_exists(name: &str) -> bool {
     if let Some(mut dir_path) = get_local_dir() {
         dir_path.push("vaults");
         dir_path.push(name);
 
-        return dir_path.as_path().exists();
+        if dir_path.as_path().exists() {
+            dir_path.push("index");
+
+            if dir_path.as_path().exists() {
+                dir_path.pop();
+                dir_path.push("info");
+
+                return dir_path.as_path().exists();
+            }
+
+            // TODO: Show an error that says "vault is corrupted" to the user.
+        }
     }
 
     false

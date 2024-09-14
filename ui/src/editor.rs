@@ -8,8 +8,21 @@ use iced::{
 
 use crate::{
     types::{ vault_index_entry::VaultIndexEntry, DefaultVaultFileError },
-    utils::get_default_vault_name,
+    utils::{get_default_vault_name, vault::authenticate_vault},
 };
+
+#[derive(Default, Debug, Clone, PartialEq)]
+pub enum EditorVaultPasswordStatus {
+    /// When password has not been entered
+    #[default]
+    NONE,
+
+    /// When password field was empty when submit button was pressed
+    Empty,
+
+    /// When password does not match
+    DoesNotMatch,
+}
 
 #[derive(Debug, Clone)]
 pub enum EditorScreen {
@@ -49,6 +62,7 @@ pub struct Pane {
 
 pub struct Editor {
     pub vault_password: String,
+    pub vault_password_status: EditorVaultPasswordStatus,
     pub screen: EditorScreen,
     pub opened_vault: Option<String>,
     pub opened_file: Option<String>,
@@ -124,6 +138,7 @@ impl Editor {
 
         Self {
             vault_password: String::default(),
+            vault_password_status: EditorVaultPasswordStatus::default(),
             screen,
             opened_vault,
             opened_file: None,
@@ -220,9 +235,24 @@ impl Editor {
             }
 
             EditorMessage::VaultPasswordSubmitted => {
-                // TODO: verify password here...
+                match &self.opened_vault {
+                    Some(vault_name) => {
+                        if authenticate_vault(
+                            vault_name,
+                            &self.vault_password
+                        ) {
+                            self.screen = EditorScreen::Editor;
+                        } else {
+                            self.vault_password_status
+                                = EditorVaultPasswordStatus::DoesNotMatch;
+                        }
+                    }
 
-                self.screen = EditorScreen::Editor;
+                    None => {
+                        self.screen = EditorScreen::VaultSelectionPrompt;
+                    }
+                }
+
             }
 
             EditorMessage::Save => {
@@ -350,7 +380,7 @@ impl Editor {
                     None => { vault_name = String::default(); }
                 }
 
-                container(column![
+                let mut cols = column![
                     Space::new(Fill, 100),
                     text!("Enter Password for Vault \"{}\"", vault_name)
                         .align_x(Center)
@@ -371,7 +401,20 @@ impl Editor {
                     )
                         .align_x(Center)
                         .width(Fill),
-                ])
+                ];
+
+                if self.vault_password_status == EditorVaultPasswordStatus::DoesNotMatch {
+                    cols = cols.push(Space::new(Fill, 16));
+
+                    cols = cols.push(
+                        text("Wrong password!")
+                            .align_x(Center)
+                            .width(Fill)
+                            .color(Color::new(0.9, 0.0, 0.0, 1.0))
+                    );
+                }
+
+                container(cols)
                     .style(move |_| style)
                     .width(Fill)
                     .height(Fill)

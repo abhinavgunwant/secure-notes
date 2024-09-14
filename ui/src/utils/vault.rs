@@ -11,9 +11,9 @@
 ///     decrypt the notes.
 /// - A directory named "notes" that contains all the encrypted notes.
 ///
-use std::{ fs::{ File, create_dir_all }, io::Write, path::PathBuf };
+use std::{ fs::{ File, create_dir_all, read }, io::Write, path::PathBuf };
 use serde::{ Serialize, Deserialize };
-use flexbuffers::FlexbufferSerializer;
+use flexbuffers::{ FlexbufferSerializer, Reader };
 
 use crate::{
     types::{
@@ -22,7 +22,7 @@ use crate::{
     },
     utils::{
         create_secure_notes_directories, get_local_dir,
-        get_default_vault_file_path, create_default_vault_file,
+        get_default_vault_file_path, create_default_vault_file, vault_exists,
     },
 };
 
@@ -186,5 +186,59 @@ pub fn create_vault_notes_directory(path: &PathBuf) -> Result<(), String> {
 
         None => Err(String::from("Invalid path string"))
     }
+}
+
+/// Authenticates access to the vault by verifying the password
+pub fn authenticate_vault(name: &str, password: &str) -> bool {
+    if !vault_exists(name) {
+        return false;
+    }
+
+    match get_local_dir() {
+        Some(mut local_dir) => {
+            local_dir.push("vaults");
+            local_dir.push(name);
+            local_dir.push("info");
+
+            let info_file_path;
+
+            if let Some(path) = local_dir.as_path().to_str() {
+                info_file_path = path;
+            } else {
+                return false;
+            }
+
+            match read(info_file_path) {
+                Ok(bytes) => {
+                    match Reader::get_root(bytes.as_slice()) {
+                        Ok(reader) => {
+                            match VaultInfo::deserialize(reader) {
+                                Ok(vault_info) => {
+                                    // TODO: use bcrypt here...
+                                    return password.eq(vault_info.password.as_str());
+                                }
+
+                                Err(e) => {
+                                    eprintln!("Error when de-serialising info file: {}", e);
+                                }
+                            }
+                        }
+
+                        Err(e) => {
+                            eprintln!("Error when getting de-serializer: {}", e);
+                        }
+                    }
+                }
+
+                Err(e) => {
+                    eprintln!("Error when reading info file: {}", e);
+                }
+            }
+        }
+
+        None => {}
+    }
+
+    return false;
 }
 
