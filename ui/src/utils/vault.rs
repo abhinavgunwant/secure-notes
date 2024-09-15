@@ -14,6 +14,13 @@
 use std::{ fs::{ File, create_dir_all, read }, io::Write, path::PathBuf };
 use serde::{ Serialize, Deserialize };
 use flexbuffers::{ FlexbufferSerializer, Reader };
+use argon2:: {
+    password_hash::{
+        rand_core::OsRng,
+        PasswordHash, PasswordHasher, PasswordVerifier, SaltString
+    },
+    Argon2, Algorithm, Version, Params,
+};
 
 use crate::{
     types::{
@@ -118,23 +125,29 @@ pub fn create_vault_info_file(path: &PathBuf, name: String, password: String) ->
     if !info_path.is_empty() {
         return match File::create(info_path) {
             Ok(mut file) => {
-                let info = VaultInfo { name, password };
-                let mut serializer = FlexbufferSerializer::new();
+                match generate_password_hash(&password) {
+                    Ok(pwd) => {
+                        let info = VaultInfo { name, password: pwd };
+                        let mut serializer = FlexbufferSerializer::new();
 
-                match info.serialize(&mut serializer) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!("{}", e);
+                        match info.serialize(&mut serializer) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                eprintln!("{}", e);
+                            }
+                        }
+
+                        match file.write(serializer.view()) {
+                            Ok(_) => Ok(()),
+
+                            Err(e) => {
+                                eprintln!("{}", e);
+                                Err(String::from(""))
+                            }
+                        }
                     }
-                }
 
-                match file.write(serializer.view()) {
-                    Ok(_) => Ok(()),
-
-                    Err(e) => {
-                        eprintln!("{}", e);
-                        Err(String::from(""))
-                    }
+                    Err(e) => Err(e),
                 }
             }
 
@@ -188,6 +201,33 @@ pub fn create_vault_notes_directory(path: &PathBuf) -> Result<(), String> {
     }
 }
 
+fn generate_password_hash(password: &str) -> Result<String, String> {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = get_argon();
+
+    match argon2.hash_password(password.as_bytes(), &salt) {
+        Ok(hash) => Ok(hash.to_string()),
+        Err(e) => {
+            eprintln!("Error while generating password hash: {}", e);
+
+            Err(String::from("Some error occured while storing password."))
+        }
+    }
+}
+
+fn get_argon<'a>() -> Argon2<'a> {
+    Argon2::new(
+        Algorithm::Argon2id,// Algorithm: Argon2id
+        Version::V0x13,     // Version: 19
+        Params::new(
+            16384,      // m = 16MB
+            8,          // t = 2
+            1,          // p = 1
+            Some(64)    // Output size in bytes
+        ).unwrap()
+    )
+}
+
 /// Authenticates access to the vault by verifying the password
 pub fn authenticate_vault(name: &str, password: &str) -> bool {
     if !vault_exists(name) {
@@ -214,8 +254,20 @@ pub fn authenticate_vault(name: &str, password: &str) -> bool {
                         Ok(reader) => {
                             match VaultInfo::deserialize(reader) {
                                 Ok(vault_info) => {
-                                    // TODO: use bcrypt here...
-                                    return password.eq(vault_info.password.as_str());
+                                    match PasswordHash::new(&vault_info.password) {
+                                        Ok(parsed_hash) => {
+                                            return get_argon()
+                                                .verify_password(
+                                                    password.as_bytes(),
+                                                    &parsed_hash
+                                                )
+                                                .is_ok();
+                                        }
+
+                                        Err(e) => {
+                                            eprintln!("Error when verifying password: {}", e);
+                                        }
+                                    }
                                 }
 
                                 Err(e) => {
