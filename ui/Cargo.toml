@@ -5,9 +5,10 @@ edition = "2021"
 authors = [ "Abhinav Gunwant" ]
 
 [dependencies]
-iced = { git = "https://github.com/iced-rs/iced.git", features = [ "lazy" ] }
+iced = { git = "https://github.com/iced-rs/iced.git", features = [ "lazy", "advanced", "canvas" ] }
 dirs-next = "2.0.0"
 flexbuffers = "2.0.0"
 serde = "1.0.209"
 argon2 = "0.5.3"
+futures = "0.3.30"
 

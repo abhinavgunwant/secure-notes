@@ -1,9 +1,16 @@
+use std::{ thread, time };
+use futures::executor;
+
 use iced::{
-    keyboard::{ on_key_press, key::{ Named, Key }, Modifiers, },
+    futures::{
+        channel::{ mpsc, mpsc::{ Sender, Receiver, TryRecvError } },
+        Stream, StreamExt, SinkExt
+    },
+    keyboard::{ key::{ Key, Named }, on_key_press, Modifiers },
     widget::{
-        column, container, pane_grid, responsive, text, text_editor, text_editor::{Action, Content},
-        text_input, Space, button,
-    }, Element, Fill, Subscription, Center, Background, Color,
+        button, column, container, pane_grid, responsive, text, text_editor,
+        text_editor::{Action, Content}, text_input, Space
+    }, Background, Center, Color, Element, Fill, Subscription, stream::channel,
 };
 
 use crate::{
@@ -22,6 +29,12 @@ pub enum EditorVaultPasswordStatus {
 
     /// When password does not match
     DoesNotMatch,
+
+    /// When password authentication is in progress
+    Loading,
+
+    /// When password is authenticated
+    Authenticated,
 }
 
 #[derive(Debug, Clone)]
@@ -34,7 +47,7 @@ pub enum EditorScreen {
 #[derive(Debug, Default, Clone)]
 pub enum EditorMessage {
     #[default]
-    Uninitialized,
+    None,
     /// Action performed on the text editor
     ActionPerformed(Action),
     Resized(pane_grid::ResizeEvent),
@@ -42,9 +55,20 @@ pub enum EditorMessage {
     CloseFocused,
     ToggleExplorer,
     Clicked(pane_grid::Pane),
+
+    /// Messages related to vault creation
     VaultPasswordChanged(String),
     VaultPasswordSubmitted,
     Save,
+
+    /// Messages related to password validation
+    PVVaultEmpty,
+    PVPasswordEmpty,
+    PVVaultAndPasswordEmpty,
+    PVDoesNotMatch,
+    PVLoading,
+    PVAuthenticated,
+    PVInitSender(Sender<(String, String)>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -228,35 +252,78 @@ impl Editor {
                 // }
             }
 
-            EditorMessage::Uninitialized => {}
+            EditorMessage::None => {}
 
             EditorMessage::VaultPasswordChanged(updated_password) => {
                 self.vault_password = updated_password;
+                self.vault_password_status = EditorVaultPasswordStatus::NONE;
             }
 
             EditorMessage::VaultPasswordSubmitted => {
-                match &self.opened_vault {
-                    Some(vault_name) => {
-                        if authenticate_vault(
-                            vault_name,
-                            &self.vault_password
-                        ) {
-                            self.screen = EditorScreen::Editor;
-                        } else {
-                            self.vault_password_status
-                                = EditorVaultPasswordStatus::DoesNotMatch;
-                        }
-                    }
-
-                    None => {
-                        self.screen = EditorScreen::VaultSelectionPrompt;
-                    }
-                }
-
+                self.vault_password_status = EditorVaultPasswordStatus::Loading;
             }
 
             EditorMessage::Save => {
                 // let text = self.content.text();
+            }
+
+            EditorMessage::PVLoading => {
+                println!("Password Validation loading");
+            }
+
+            EditorMessage::PVVaultEmpty => {
+                println!("Password Validation: vault empty");
+            }
+
+            EditorMessage::PVDoesNotMatch => {
+                println!("Password Validation: password does not match");
+                self.vault_password_status
+                    = EditorVaultPasswordStatus::DoesNotMatch;
+            }
+
+            EditorMessage::PVPasswordEmpty => {
+                println!("Password Validation password field is empty");
+            }
+
+            EditorMessage::PVAuthenticated => {
+                println!("Password Validation authenticated");
+                self.screen = EditorScreen::Editor;
+                self.vault_password_status
+                    = EditorVaultPasswordStatus::Authenticated;
+            }
+
+            EditorMessage::PVVaultAndPasswordEmpty => {
+                println!("Password Validation vault name and password are empty");
+            }
+
+            EditorMessage::PVInitSender(mut sender) => {
+                match self.opened_vault.clone() {
+                    Some(vault_name) => {
+                        let password = self.vault_password.clone();
+                        println!(
+                            "Got the sender from the worker, vault_name: {}, vault_password: {}",
+                            vault_name,
+                            password,
+                        );
+
+                        async fn send_values(
+                            sender: &mut Sender<(String, String)>,
+                            vault_name: String, password: String
+                        ) {
+                            println!("** Sending the values here...");
+                            let _ = sender.send((vault_name, password)).await;
+                        }
+
+                        let thread_handle = thread::spawn(move || {
+                            executor::block_on(send_values(&mut sender, vault_name, password));
+                            println!("** Sending the vault name and password");
+                        });
+
+                        let _ = thread_handle.join();
+                    }
+
+                    None => {}
+                }
             }
         }
     }
@@ -295,6 +362,7 @@ impl Editor {
                                 })),
                                 ..container::Style::default()
                             };
+
                             if self.opened_file == None {
                                 container(column![
                                     text("Select a file from the explorer on the left to view/edit!")
@@ -317,7 +385,6 @@ impl Editor {
                                     .into()
                             }
                         } else {
-
                             if self.explorer_files.is_empty() {
                                 container(text!("This shows the notes here..."))
                                     .style(move |_| style)
@@ -333,7 +400,6 @@ impl Editor {
                             }
                         }
                     }));
-
 
                     if pane.pane_type == PaneType::Explorer {
                         pane_grid_content = pane_grid_content.title_bar(
@@ -403,15 +469,41 @@ impl Editor {
                         .width(Fill),
                 ];
 
-                if self.vault_password_status == EditorVaultPasswordStatus::DoesNotMatch {
-                    cols = cols.push(Space::new(Fill, 16));
+                match self.vault_password_status {
+                    EditorVaultPasswordStatus::DoesNotMatch => {
+                        cols = cols.push(Space::new(Fill, 16));
 
-                    cols = cols.push(
-                        text("Wrong password!")
-                            .align_x(Center)
-                            .width(Fill)
-                            .color(Color::new(0.9, 0.0, 0.0, 1.0))
-                    );
+                        cols = cols.push(
+                            text("Wrong password!")
+                                .align_x(Center)
+                                .width(Fill)
+                                .color(Color::new(0.9, 0.0, 0.0, 1.0))
+                        );
+                    }
+
+                    EditorVaultPasswordStatus::Empty => {
+                        cols = cols.push(Space::new(Fill, 16));
+
+                        cols = cols.push(
+                            text("Passwrod cannot be empty!")
+                                .align_x(Center)
+                                .width(Fill)
+                                .color(Color::new(0.9, 0.0, 0.0, 1.0))
+                        );
+                    }
+
+                    EditorVaultPasswordStatus::NONE => {}
+
+                    EditorVaultPasswordStatus::Loading => {
+                        println!("editor vault password status: loading");
+                        cols = column![
+                            text!("Please wait...")
+                                .align_x(Center)
+                                .width(Fill),
+                        ];
+                    }
+
+                    EditorVaultPasswordStatus::Authenticated => {}
                 }
 
                 container(cols)
@@ -424,7 +516,7 @@ impl Editor {
     }
 
     pub fn subscription(&self) -> Subscription<EditorMessage> {
-        on_key_press(|key_code, modifiers|{
+        let key_press_sub = on_key_press(|key_code, modifiers|{
             match (modifiers, key_code.as_ref()) {
                 (Modifiers::CTRL, Key::Character("s")) => {
                     // TODO: Save the file
@@ -436,7 +528,20 @@ impl Editor {
 
                 _ => None
             }
-        })
+        });
+
+        let auth_sub;
+
+        if self.vault_password_status == EditorVaultPasswordStatus::Loading {
+            auth_sub = Subscription::run(auth_worker);
+        } else {
+            auth_sub = Subscription::none();
+        }
+
+        Subscription::batch([
+            key_press_sub,
+            auth_sub,
+        ])
     }
 }
 
@@ -444,5 +549,77 @@ impl Default for Editor {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn auth_worker() -> impl Stream<Item = EditorMessage> {
+    channel(1, move | mut sender | async move {
+        let ( pv_sender, mut pv_receiver ) = mpsc::channel::<(String, String)>(1);
+
+        println!("Sending the sender");
+        let _ = sender.send(EditorMessage::PVInitSender(pv_sender)).await;
+
+        println!("Getting the username and password");
+
+        async fn authenticate(
+            pv_receiver: &mut Receiver<(String, String)>,
+            sender: &mut Sender<EditorMessage>
+        ) {
+            let pause_time = time::Duration::from_millis(1000);
+            let mut loop_counter = 0;
+            let mut vault_name: String = String::default();
+            let mut password: String = String::default();
+
+            println!("Inside thread!");
+
+            while loop_counter < 100 {
+                match pv_receiver.try_next() {
+                    Ok(receiver_option) => {
+                        match receiver_option {
+                            Some((_vault_name, _password)) => {
+                                vault_name = _vault_name;
+                                password = _password;
+                                println!("** vault: {}, password: {}", vault_name, password);
+
+                                break;
+                            }
+
+                            None => {}
+                        }
+                    }
+
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                    }
+                }
+
+                loop_counter += 1;
+                thread::sleep(pause_time);
+            }
+
+            let vault_empty = vault_name.is_empty();
+            let password_empty = password.is_empty();
+
+            if !vault_empty && !password_empty {
+                println!("authenticating");
+                if authenticate_vault(vault_name.as_str(), password.as_str()) {
+                    let _ = sender.send(EditorMessage::PVAuthenticated).await;
+                } else {
+                    let _ = sender.send(EditorMessage::PVDoesNotMatch).await;
+                }
+            } else {
+                if vault_empty && password_empty {
+                    let _ = sender.send(EditorMessage::PVVaultAndPasswordEmpty).await;
+                } else if vault_empty {
+                    let _ = sender.send(EditorMessage::PVVaultEmpty).await;
+                } else {
+                    let _ = sender.send(EditorMessage::PVPasswordEmpty).await;
+                }
+            }
+        }
+
+        let _ = thread::spawn(move || {
+            executor::block_on(authenticate(&mut pv_receiver, &mut sender));
+        });
+    })
 }
 
