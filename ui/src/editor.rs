@@ -39,8 +39,13 @@ pub enum EditorVaultPasswordStatus {
 
 #[derive(Debug, Clone)]
 pub enum EditorScreen {
+    /// Shows the password prompt to user to open the default vault
     PasswordPrompt,
+
+    /// Shows the prompt to select the vault the user wants to log into
     VaultSelectionPrompt,
+
+    /// New session, shows a blank right hand side
     Editor,
 }
 
@@ -48,7 +53,7 @@ pub enum EditorScreen {
 pub enum EditorMessage {
     #[default]
     None,
-    /// Action performed on the text editor
+    // Action performed on the text editor
     ActionPerformed(Action),
     Resized(pane_grid::ResizeEvent),
     Close(pane_grid::Pane),
@@ -56,12 +61,16 @@ pub enum EditorMessage {
     ToggleExplorer,
     Clicked(pane_grid::Pane),
 
-    /// Messages related to vault creation
+    // Messages related to vault creation
     VaultPasswordChanged(String),
     VaultPasswordSubmitted,
-    Save,
 
-    /// Messages related to password validation
+    // Messages related to notes
+    NoteNameChanged(String),
+    Save,
+    New,
+
+    // Messages related to password validation
     PVVaultEmpty,
     PVPasswordEmpty,
     PVVaultAndPasswordEmpty,
@@ -89,7 +98,7 @@ pub struct Editor {
     pub vault_password_status: EditorVaultPasswordStatus,
     pub screen: EditorScreen,
     pub opened_vault: Option<String>,
-    pub opened_file: Option<String>,
+    pub opened_file: Option<VaultIndexEntry>,
     pub explorer_files: Vec<VaultIndexEntry>,
     pub content: Content,
     pub panes: pane_grid::State<Pane>,
@@ -263,8 +272,28 @@ impl Editor {
                 self.vault_password_status = EditorVaultPasswordStatus::Loading;
             }
 
+            EditorMessage::NoteNameChanged(note_name) => {
+                match self.opened_file.clone() {
+                    Some(mut opened_file) => {
+                        opened_file.name = note_name;
+
+                        self.opened_file = Some(opened_file);
+                    }
+
+                    None => {}
+                }
+            }
+
             EditorMessage::Save => {
                 // let text = self.content.text();
+            }
+
+            EditorMessage::New => {
+                self.opened_file = Some(VaultIndexEntry {
+                    id: 0,
+                    name: String::from("Untitled Note"),
+                    parent_folder: None,
+                });
             }
 
             EditorMessage::PVLoading => {
@@ -367,16 +396,36 @@ impl Editor {
                                 container(column![
                                     text("Select a file from the explorer on the left to view/edit!")
                                         .align_x(Center)
-                                        .align_y(Center)
+                                        // .align_y(Center)
                                         .width(Fill)
-                                        .height(Fill)
-                                        .center()
+                                        // .height(Fill)
+                                        .center(),
+                                    text("Ctrl + N for new note")
+                                        .align_x(Center)
+                                        // .align_y(Center)
+                                        .width(Fill)
+                                        .center(),
                                 ])
                                     .style(move |_| _style)
+                                    .width(Fill)
+                                    .height(Fill)
+                                    .align_x(Center)
+                                    .align_y(Center)
                                     .into()
                             } else {
+                                let opened_file;
+
+                                if let Some(o_file) = &self.opened_file {
+                                    opened_file = o_file.name.as_str();
+                                } else {
+                                    opened_file = ""; 
+                                }
+
                                 container(column![
-                                    text_input("test", "text"),
+                                    text_input("", opened_file)
+                                        .on_input(
+                                            EditorMessage::NoteNameChanged
+                                        ),
                                     text_editor(&self.content)
                                         .on_action(EditorMessage::ActionPerformed)
                                         .height(Fill)
@@ -453,7 +502,7 @@ impl Editor {
                         .width(Fill),
                     Space::new(Fill, 16),
                     container(
-                        text_input("", &self.vault_password) 
+                        text_input("", &self.vault_password)
                             .secure(true)
                             .width(300)
                             .on_input(EditorMessage::VaultPasswordChanged)
@@ -525,6 +574,9 @@ impl Editor {
 
                 (Modifiers::CTRL, Key::Character("e")) =>
                     Some(EditorMessage::ToggleExplorer),
+
+                (Modifiers::CTRL, Key::Character("n")) =>
+                    Some(EditorMessage::New),
 
                 _ => None
             }

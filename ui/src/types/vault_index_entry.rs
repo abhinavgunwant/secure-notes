@@ -1,9 +1,9 @@
 use serde::{ Serialize, Deserialize };
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct VaultIndexEntry {
-    id: u32,
-    name: String,
-    parent_folder: Option<u32>,
+    pub id: u32,
+    pub name: String,
+    pub parent_folder: Option<u32>,
 }
 
