@@ -5,7 +5,7 @@ edition = "2021"
 authors = [ "Abhinav Gunwant" ]
 
 [dependencies]
-iced = { git = "https://github.com/iced-rs/iced.git", features = [ "lazy", "advanced", "canvas" ] }
+iced = { git = "https://github.com/iced-rs/iced.git", features = [ "lazy", "advanced", "canvas", "svg" ] }
 dirs-next = "2.0.0"
 flexbuffers = "2.0.0"
 serde = "1.0.209"

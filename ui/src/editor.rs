@@ -8,8 +8,8 @@ use iced::{
     },
     keyboard::{ key::{ Key, Named }, on_key_press, Modifiers },
     widget::{
-        button, column, container, pane_grid, responsive, text, text_editor,
-        text_editor::{Action, Content}, text_input, Space
+        button, column, row, container, pane_grid, responsive, text, text_editor,
+        text_editor::{Action, Content}, text_input, Space, svg,
     }, Background, Center, Color, Element, Fill, Subscription, stream::channel,
 };
 
@@ -37,7 +37,7 @@ pub enum EditorVaultPasswordStatus {
     Authenticated,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EditorScreen {
     /// Shows the password prompt to user to open the default vault
     PasswordPrompt,
@@ -66,7 +66,9 @@ pub enum EditorMessage {
     VaultPasswordSubmitted,
 
     // Messages related to notes
+    EditNoteName(bool),
     NoteNameChanged(String),
+    SaveNoteName,
     Save,
     New,
 
@@ -97,6 +99,10 @@ pub struct Editor {
     pub vault_password: String,
     pub vault_password_status: EditorVaultPasswordStatus,
     pub screen: EditorScreen,
+
+    /// When name is being edited
+    pub edit_name: bool,
+    pub temp_note_name: String,
     pub opened_vault: Option<String>,
     pub opened_file: Option<VaultIndexEntry>,
     pub explorer_files: Vec<VaultIndexEntry>,
@@ -173,6 +179,8 @@ impl Editor {
             vault_password: String::default(),
             vault_password_status: EditorVaultPasswordStatus::default(),
             screen,
+            edit_name: false,
+            temp_note_name: String::default(),
             opened_vault,
             opened_file: None,
             explorer_files: vec![],
@@ -272,12 +280,30 @@ impl Editor {
                 self.vault_password_status = EditorVaultPasswordStatus::Loading;
             }
 
-            EditorMessage::NoteNameChanged(note_name) => {
-                match self.opened_file.clone() {
-                    Some(mut opened_file) => {
-                        opened_file.name = note_name;
+            EditorMessage::EditNoteName(should_edit) => {
+                self.edit_name = should_edit;
+                if should_edit {
+                    if let Some(note_name) = &self.opened_file {
+                        self.temp_note_name = note_name.name.clone();
+                    }
+                }
+            }
 
-                        self.opened_file = Some(opened_file);
+            EditorMessage::NoteNameChanged(note_name) => {
+                self.temp_note_name = note_name;
+            }
+
+            EditorMessage::SaveNoteName => {
+                match self.opened_file.clone() {
+                    Some(file_index_entry) => {
+                        let new_index_entry = VaultIndexEntry {
+                            id: file_index_entry.id,
+                            name: self.temp_note_name.clone(),
+                            parent_folder: file_index_entry.parent_folder,
+                        };
+
+                        self.opened_file = Some(new_index_entry);
+                        self.edit_name = false;
                     }
 
                     None => {}
@@ -421,15 +447,69 @@ impl Editor {
                                     opened_file = ""; 
                                 }
 
-                                container(column![
-                                    text_input("", opened_file)
-                                        .on_input(
-                                            EditorMessage::NoteNameChanged
-                                        ),
+                                let mut ui_column = column![];
+
+                                if self.edit_name {
+                                    ui_column = ui_column.push(row![
+                                        text_input("", self.temp_note_name.as_str())
+                                            .size(18)
+                                            .on_input(
+                                                EditorMessage::NoteNameChanged
+                                            )
+                                            .on_submit(
+                                                EditorMessage::SaveNoteName
+                                            ),
+                                        Space::new(4, 0),
+                                        button(
+                                            svg("./assets/check-line.svg")
+                                                .width(16)
+                                                .height(22)
+                                        )
+                                            .on_press(EditorMessage::SaveNoteName),
+                                        Space::new(4, 0),
+                                        button(
+                                            svg("./assets/close-line.svg")
+                                                .width(16)
+                                                .height(22)
+                                        )
+                                            .on_press(
+                                                EditorMessage::EditNoteName(
+                                                    false
+                                            ))
+                                    ]);
+                                } else {
+                                    ui_column = ui_column.push(column![
+                                        Space::new(0, 2),
+                                        row![
+                                            Space::new(5, 0),
+                                            column![
+                                                Space::new(0, 3),
+                                                text(opened_file)
+                                                    .size(18),
+                                            ],
+                                            Space::new(16, 0),
+                                            button(
+                                                svg("./assets/pencil-fill.svg")
+                                                    .width(16)
+                                                    .height(18)
+                                            )
+                                                .on_press(
+                                                    EditorMessage::EditNoteName(
+                                                        !self.edit_name
+                                                    )
+                                                )
+                                        ],
+                                        Space::new(0, 2),
+                                    ]);
+                                }
+
+                                ui_column = ui_column.push(
                                     text_editor(&self.content)
                                         .on_action(EditorMessage::ActionPerformed)
                                         .height(Fill)
-                                ])
+                                );
+
+                                container(ui_column)
                                     .style(move |_| _style)
                                     .into()
                             }
@@ -503,9 +583,11 @@ impl Editor {
                     Space::new(Fill, 16),
                     container(
                         text_input("", &self.vault_password)
+                            .id(text_input::Id::new("vault-password"))
                             .secure(true)
                             .width(300)
                             .on_input(EditorMessage::VaultPasswordChanged)
+                            .on_submit(EditorMessage::VaultPasswordSubmitted)
                     )
                         .align_x(Center)
                         .width(Fill),
