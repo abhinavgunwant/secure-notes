@@ -23,10 +23,7 @@ use argon2:: {
 };
 
 use crate::{
-    types::{
-        vault_index::VaultIndex, vault_index_entry::VaultIndexEntry,
-        vault_info::VaultInfo
-    },
+    types::vault_info::VaultInfo,
     utils::{
         create_secure_notes_directories, get_local_dir,
         get_default_vault_file_path, create_default_vault_file, vault_exists,

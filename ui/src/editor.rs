@@ -1,16 +1,19 @@
-use std::{ thread, time };
+use std::{ thread, sync::Arc };
 use futures::executor;
 
 use iced::{
     futures::{
-        channel::{ mpsc, mpsc::{ Sender, Receiver, TryRecvError } },
-        Stream, StreamExt, SinkExt
+        channel::{ mpsc, mpsc::Sender },
+        Stream, SinkExt
     },
-    keyboard::{ key::{ Key, Named }, on_key_press, Modifiers },
+    keyboard::{ key::Key, Event::KeyPressed },
     widget::{
         button, column, row, container, pane_grid, responsive, text, text_editor,
         text_editor::{Action, Content}, text_input, Space, svg,
-    }, Background, Center, Color, Element, Fill, Subscription, stream::channel,
+    },
+    event::{ self, Event },
+    Background, Center, Color, Element, Fill, Subscription, stream::channel,
+    Task,
 };
 
 use crate::{
@@ -53,11 +56,12 @@ pub enum EditorScreen {
 pub enum EditorMessage {
     #[default]
     None,
+    Event(Event),
     // Action performed on the text editor
     ActionPerformed(Action),
     Resized(pane_grid::ResizeEvent),
-    Close(pane_grid::Pane),
-    CloseFocused,
+    // Close(pane_grid::Pane),
+    // CloseFocused,
     ToggleExplorer,
     Clicked(pane_grid::Pane),
 
@@ -69,7 +73,7 @@ pub enum EditorMessage {
     EditNoteName(bool),
     NoteNameChanged(String),
     SaveNoteName,
-    Save,
+    // Save,
     New,
 
     // Messages related to password validation
@@ -77,9 +81,9 @@ pub enum EditorMessage {
     PVPasswordEmpty,
     PVVaultAndPasswordEmpty,
     PVDoesNotMatch,
-    PVLoading,
+    // PVLoading,
     PVAuthenticated,
-    PVInitSender(Sender<(String, String)>),
+    PVInitSender(Arc<thread::JoinHandle<()>>, Sender<(String, String)>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -194,8 +198,41 @@ impl Editor {
     }
 
     // pub fn update(&mut self, editor_state: EditorMessage) -> Task<EditorMessage> {
-    pub fn update(&mut self, editor_state: EditorMessage) {
+    pub fn update(&mut self, editor_state: EditorMessage) -> Task<EditorMessage> {
         match editor_state {
+            EditorMessage::Event(event) => {
+                match event {
+                    Event::Keyboard(KeyPressed {
+                        key, modifiers, ..
+                    }) => {
+                        if modifiers.control() {
+                            match key {
+                                Key::Character(k) => {
+                                    match k.as_str() {
+                                        "s" => {
+                                        }
+
+                                        "e" => {
+                                            return Task::done(EditorMessage::ToggleExplorer);
+                                        }
+
+                                        "n" => {
+                                            return Task::done(EditorMessage::New);
+                                        }
+
+                                        _ => {}
+                                    }
+                                }
+
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    _ => {}
+                }
+            }
+
             EditorMessage::ActionPerformed(action) => {
                 self.content.perform(action);
             }
@@ -213,23 +250,23 @@ impl Editor {
                 self.panes.resize(split, ratio);
             }
 
-            EditorMessage::Close(pane) => {
-                if let Some((_, sibling)) = self.panes.close(pane) {
-                    self.focused_pane = Some(sibling);
-                }
-            }
+            // EditorMessage::Close(pane) => {
+            //     if let Some((_, sibling)) = self.panes.close(pane) {
+            //         self.focused_pane = Some(sibling);
+            //     }
+            // }
 
-            EditorMessage::CloseFocused => {
-                if let Some(pane) = self.focused_pane {
-                    if let Some(Pane { is_pinned, ..}) = self.panes.get(pane) {
-                        if !is_pinned {
-                            if let Some((_, sibling)) = self.panes.close(pane) {
-                                self.focused_pane = Some(sibling);
-                            }
-                        }
-                    }
-                }
-            }
+            // EditorMessage::CloseFocused => {
+            //     if let Some(pane) = self.focused_pane {
+            //         if let Some(Pane { is_pinned, ..}) = self.panes.get(pane) {
+            //             if !is_pinned {
+            //                 if let Some((_, sibling)) = self.panes.close(pane) {
+            //                     self.focused_pane = Some(sibling);
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
 
             EditorMessage::Clicked(pane) => {
                 self.focused_pane = Some(pane);
@@ -310,9 +347,9 @@ impl Editor {
                 }
             }
 
-            EditorMessage::Save => {
-                // let text = self.content.text();
-            }
+            // EditorMessage::Save => {
+            //     // let text = self.content.text();
+            // }
 
             EditorMessage::New => {
                 self.opened_file = Some(VaultIndexEntry {
@@ -322,9 +359,9 @@ impl Editor {
                 });
             }
 
-            EditorMessage::PVLoading => {
-                println!("Password Validation loading");
-            }
+            // EditorMessage::PVLoading => {
+            //     println!("Password Validation loading");
+            // }
 
             EditorMessage::PVVaultEmpty => {
                 println!("Password Validation: vault empty");
@@ -337,6 +374,7 @@ impl Editor {
             }
 
             EditorMessage::PVPasswordEmpty => {
+                self.vault_password_status = EditorVaultPasswordStatus::Empty;
                 println!("Password Validation password field is empty");
             }
 
@@ -351,7 +389,7 @@ impl Editor {
                 println!("Password Validation vault name and password are empty");
             }
 
-            EditorMessage::PVInitSender(mut sender) => {
+            EditorMessage::PVInitSender(t_handle, mut sender) => {
                 match self.opened_vault.clone() {
                     Some(vault_name) => {
                         let password = self.vault_password.clone();
@@ -365,22 +403,25 @@ impl Editor {
                             sender: &mut Sender<(String, String)>,
                             vault_name: String, password: String
                         ) {
-                            println!("** Sending the values here...");
                             let _ = sender.send((vault_name, password)).await;
                         }
 
                         let thread_handle = thread::spawn(move || {
                             executor::block_on(send_values(&mut sender, vault_name, password));
-                            println!("** Sending the vault name and password");
+                            println!("** Thread 2: Sending the vault name and password");
                         });
 
                         let _ = thread_handle.join();
+
+                        t_handle.thread().unpark();
                     }
 
                     None => {}
                 }
             }
         }
+
+        Task::none()
     }
 
     pub fn view(&self) -> Element<EditorMessage> {
@@ -616,7 +657,7 @@ impl Editor {
                         cols = cols.push(Space::new(Fill, 16));
 
                         cols = cols.push(
-                            text("Passwrod cannot be empty!")
+                            text("Password cannot be empty!")
                                 .align_x(Center)
                                 .width(Fill)
                                 .color(Color::new(0.9, 0.0, 0.0, 1.0))
@@ -647,23 +688,7 @@ impl Editor {
     }
 
     pub fn subscription(&self) -> Subscription<EditorMessage> {
-        let key_press_sub = on_key_press(|key_code, modifiers|{
-            match (modifiers, key_code.as_ref()) {
-                (Modifiers::CTRL, Key::Character("s")) => {
-                    // TODO: Save the file
-                    return None;
-                }
-
-                (Modifiers::CTRL, Key::Character("e")) =>
-                    Some(EditorMessage::ToggleExplorer),
-
-                (Modifiers::CTRL, Key::Character("n")) =>
-                    Some(EditorMessage::New),
-
-                _ => None
-            }
-        });
-
+        let event_subscription = event::listen().map(EditorMessage::Event);
         let auth_sub;
 
         if self.vault_password_status == EditorVaultPasswordStatus::Loading {
@@ -673,7 +698,7 @@ impl Editor {
         }
 
         Subscription::batch([
-            key_press_sub,
+            event_subscription,
             auth_sub,
         ])
     }
@@ -685,75 +710,68 @@ impl Default for Editor {
     }
 }
 
+fn send_async_message(sender: &mut Sender<EditorMessage>, msg: EditorMessage) {
+    async fn send_values(
+        sender: &mut Sender<EditorMessage>,
+        msg: EditorMessage
+    ) {
+        let _ = sender.send(msg).await;
+    }
+
+    executor::block_on(send_values(sender, msg));
+}
+
 fn auth_worker() -> impl Stream<Item = EditorMessage> {
     channel(1, move | mut sender | async move {
         let ( pv_sender, mut pv_receiver ) = mpsc::channel::<(String, String)>(1);
 
-        println!("Sending the sender");
-        let _ = sender.send(EditorMessage::PVInitSender(pv_sender)).await;
+        let mut sender_clone = sender.clone();
 
-        println!("Getting the username and password");
-
-        async fn authenticate(
-            pv_receiver: &mut Receiver<(String, String)>,
-            sender: &mut Sender<EditorMessage>
-        ) {
-            let pause_time = time::Duration::from_millis(1000);
-            let mut loop_counter = 0;
+        let t_handle = thread::spawn(move || {
             let mut vault_name: String = String::default();
             let mut password: String = String::default();
 
-            println!("Inside thread!");
+            thread::park();
 
-            while loop_counter < 100 {
-                match pv_receiver.try_next() {
-                    Ok(receiver_option) => {
-                        match receiver_option {
-                            Some((_vault_name, _password)) => {
-                                vault_name = _vault_name;
-                                password = _password;
-                                println!("** vault: {}, password: {}", vault_name, password);
-
-                                break;
-                            }
-
-                            None => {}
+            match pv_receiver.try_next() {
+                Ok(receiver_option) => {
+                    match receiver_option {
+                        Some((_vault_name, _password)) => {
+                            vault_name = _vault_name;
+                            password = _password;
                         }
-                    }
 
-                    Err(e) => {
-                        eprintln!("Error: {}", e);
+                        None => {}
                     }
                 }
 
-                loop_counter += 1;
-                thread::sleep(pause_time);
+                Err(e) => {
+                    eprintln!("Thread 1: Error: {}", e);
+                }
             }
 
             let vault_empty = vault_name.is_empty();
             let password_empty = password.is_empty();
 
             if !vault_empty && !password_empty {
-                println!("authenticating");
+                println!("Thread 1: authenticating");
                 if authenticate_vault(vault_name.as_str(), password.as_str()) {
-                    let _ = sender.send(EditorMessage::PVAuthenticated).await;
+                    send_async_message(&mut sender, EditorMessage::PVAuthenticated);
                 } else {
-                    let _ = sender.send(EditorMessage::PVDoesNotMatch).await;
+                    send_async_message(&mut sender, EditorMessage::PVDoesNotMatch);
                 }
             } else {
                 if vault_empty && password_empty {
-                    let _ = sender.send(EditorMessage::PVVaultAndPasswordEmpty).await;
+                    send_async_message(&mut sender, EditorMessage::PVVaultAndPasswordEmpty);
                 } else if vault_empty {
-                    let _ = sender.send(EditorMessage::PVVaultEmpty).await;
+                    send_async_message(&mut sender, EditorMessage::PVVaultEmpty);
                 } else {
-                    let _ = sender.send(EditorMessage::PVPasswordEmpty).await;
+                    send_async_message(&mut sender, EditorMessage::PVPasswordEmpty);
                 }
             }
-        }
-
-        let _ = thread::spawn(move || {
-            executor::block_on(authenticate(&mut pv_receiver, &mut sender));
         });
+
+        let _ = sender_clone.send(EditorMessage::PVInitSender(Arc::new(t_handle), pv_sender)).await;
     })
 }
 
