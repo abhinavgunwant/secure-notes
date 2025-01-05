@@ -299,6 +299,7 @@ pub fn save_note_to_vault(
 ) -> Result<(), std::io::Error> {
     match get_vault_dir(vault_name) {
         Some(mut path) => {
+            path.push("notes");
             path.push(note_name);
 
             if let Some(file_path) = path.to_str() {

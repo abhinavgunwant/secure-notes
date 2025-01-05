@@ -366,13 +366,8 @@ impl Editor {
                 }
 
                 match save_note_to_vault(note_name, text, vault_name) {
-                    Ok(()) => {
-                        println!("File saved!");
-                    }
-
-                    Err(e) => {
-                        eprintln!("Error while saving file: {}", e);
-                    }
+                    Ok(()) => { println!("File saved!"); }
+                    Err(e) => { eprintln!("Error while saving file: {}", e); }
                 }
             }
 
