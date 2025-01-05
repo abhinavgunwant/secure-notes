@@ -29,6 +29,29 @@ pub fn get_local_dir() -> Option<PathBuf> {
     }
 }
 
+pub fn get_vault_root_dir() -> Option<PathBuf> {
+    match get_local_dir() {
+        Some(mut path) => {
+            path.push("vaults");
+            Some(path)
+        }
+
+        None => None,
+    }
+}
+
+/// Gets `vault_name`'s directory where `vault_name` is the name of a vault.
+pub fn get_vault_dir(vault_name: String) -> Option<PathBuf> {
+    match get_vault_root_dir() {
+        Some(mut path) => {
+            path.push(vault_name);
+            Some(path)
+        }
+
+        None => None,
+    }
+}
+
 /// Checks if vault exists.
 ///
 /// Does this by checking if a directory with the vault name exists inside the

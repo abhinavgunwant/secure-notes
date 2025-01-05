@@ -11,7 +11,9 @@
 ///     decrypt the notes.
 /// - A directory named "notes" that contains all the encrypted notes.
 ///
-use std::{ fs::{ File, create_dir_all, read }, io::Write, path::PathBuf };
+use std::{
+    fs::{ File, create_dir_all, read, write }, io::Write, path::PathBuf,
+};
 use serde::{ Serialize, Deserialize };
 use flexbuffers::{ FlexbufferSerializer, Reader };
 use argon2:: {
@@ -25,7 +27,7 @@ use argon2:: {
 use crate::{
     types::vault_info::VaultInfo,
     utils::{
-        create_secure_notes_directories, get_local_dir,
+        create_secure_notes_directories, get_local_dir, get_vault_dir,
         get_default_vault_file_path, create_default_vault_file, vault_exists,
     },
 };
@@ -178,7 +180,6 @@ pub fn create_vault_index_file(path: &PathBuf) -> Result<(), String> {
     Err(String::from("Invalid path"))
 }
 
-
 pub fn create_vault_notes_directory(path: &PathBuf) -> Result<(), String> {
     let mut dir_path_buf = path.clone();
     dir_path_buf.push("notes");
@@ -289,5 +290,29 @@ pub fn authenticate_vault(name: &str, password: &str) -> bool {
     }
 
     return false;
+}
+
+pub fn save_note_to_vault(
+    note_name: String,
+    text: String,
+    vault_name: String,
+) -> Result<(), std::io::Error> {
+    match get_vault_dir(vault_name) {
+        Some(mut path) => {
+            path.push(note_name);
+
+            if let Some(file_path) = path.to_str() {
+                return match write(file_path, text) {
+                    Ok(_) => Ok(()),
+
+                    Err(e) => Err(e),
+                };
+            }
+
+            return Err(std::io::Error::from(std::io::ErrorKind::InvalidData));
+        }
+
+        None => Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+    }
 }
 

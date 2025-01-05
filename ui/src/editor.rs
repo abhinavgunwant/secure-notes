@@ -18,7 +18,7 @@ use iced::{
 
 use crate::{
     types::{ vault_index_entry::VaultIndexEntry, DefaultVaultFileError },
-    utils::{get_default_vault_name, vault::authenticate_vault},
+    utils::{get_default_vault_name, vault::{authenticate_vault, save_note_to_vault}},
 };
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -73,7 +73,7 @@ pub enum EditorMessage {
     EditNoteName(bool),
     NoteNameChanged(String),
     SaveNoteName,
-    // Save,
+    Save,
     New,
 
     // Messages related to password validation
@@ -210,6 +210,7 @@ impl Editor {
                                 Key::Character(k) => {
                                     match k.as_str() {
                                         "s" => {
+                                            return Task::done(EditorMessage::Save);
                                         }
 
                                         "e" => {
@@ -347,9 +348,33 @@ impl Editor {
                 }
             }
 
-            // EditorMessage::Save => {
-            //     // let text = self.content.text();
-            // }
+            EditorMessage::Save => {
+                let text = self.content.text();
+                let note_name;
+                let vault_name;
+
+                if let Some(n_name) = self.opened_file.clone() {
+                    note_name = n_name.name;
+                } else {
+                    return Task::none();
+                }
+
+                if let Some(v_name) = self.opened_vault.clone() {
+                    vault_name = v_name;
+                } else {
+                    return Task::none();
+                }
+
+                match save_note_to_vault(note_name, text, vault_name) {
+                    Ok(()) => {
+                        println!("File saved!");
+                    }
+
+                    Err(e) => {
+                        eprintln!("Error while saving file: {}", e);
+                    }
+                }
+            }
 
             EditorMessage::New => {
                 self.opened_file = Some(VaultIndexEntry {
