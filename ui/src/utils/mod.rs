@@ -52,6 +52,16 @@ pub fn get_vault_dir(vault_name: String) -> Option<PathBuf> {
     }
 }
 
+// Gets the path of the index file of the vault.
+pub fn get_vault_index_dir(vault_name: &String) -> Option<PathBuf> {
+    if let Some(mut path) = get_vault_dir(vault_name.clone()) {
+        path.push("index");
+        return Some(path);
+    }
+
+    None
+}
+
 /// Checks if vault exists.
 ///
 /// Does this by checking if a directory with the vault name exists inside the

@@ -8,8 +8,9 @@ use iced::{
     },
     keyboard::{ key::Key, Event::KeyPressed },
     widget::{
-        button, column, row, container, pane_grid, responsive, text, text_editor,
-        text_editor::{Action, Content}, text_input, Space, svg,
+        button, column, row, container, pane_grid, responsive, text,
+        text_editor, text_editor::{Action, Content}, text_input, Space, svg,
+        scrollable, Column, Button, Text,
     },
     event::{ self, Event },
     Background, Center, Color, Element, Fill, Subscription, stream::channel,
@@ -17,8 +18,17 @@ use iced::{
 };
 
 use crate::{
-    types::{ vault_index_entry::VaultIndexEntry, DefaultVaultFileError },
-    utils::{get_default_vault_name, vault::{authenticate_vault, save_note_to_vault}},
+    types::{
+        vault_index_entry::{ VaultIndexEntry, VaultIndexEntryType },
+        DefaultVaultFileError, vault_index::VaultIndex,
+    },
+    utils::{
+        get_default_vault_name,
+        vault::{
+            authenticate_vault, save_note_to_vault, get_vault_index,
+            set_vault_index,
+        }
+    },
 };
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -75,6 +85,7 @@ pub enum EditorMessage {
     SaveNoteName,
     Save,
     New,
+    OpenNote(VaultIndexEntry),
 
     // Messages related to password validation
     PVVaultEmpty,
@@ -109,7 +120,7 @@ pub struct Editor {
     pub temp_note_name: String,
     pub opened_vault: Option<String>,
     pub opened_file: Option<VaultIndexEntry>,
-    pub explorer_files: Vec<VaultIndexEntry>,
+    pub vault_index: VaultIndex,
     pub content: Content,
     pub panes: pane_grid::State<Pane>,
     pub panes_created: usize,
@@ -179,6 +190,18 @@ impl Editor {
             }
         }
 
+        let vault_index = match &opened_vault {
+            Some(vault) => {
+                if let Ok(v_index) = get_vault_index(&vault) {
+                    v_index
+                } else {
+                    VaultIndex::default()
+                }
+            }
+
+            None => VaultIndex::default()
+        };
+
         Self {
             vault_password: String::default(),
             vault_password_status: EditorVaultPasswordStatus::default(),
@@ -187,7 +210,7 @@ impl Editor {
             temp_note_name: String::default(),
             opened_vault,
             opened_file: None,
-            explorer_files: vec![],
+            vault_index,
             content: Content::default(),
             panes: pane_state,
             panes_created: 0,
@@ -332,19 +355,15 @@ impl Editor {
             }
 
             EditorMessage::SaveNoteName => {
-                match self.opened_file.clone() {
-                    Some(file_index_entry) => {
-                        let new_index_entry = VaultIndexEntry {
-                            id: file_index_entry.id,
-                            name: self.temp_note_name.clone(),
-                            parent_folder: file_index_entry.parent_folder,
-                        };
+                if let Some(index_entry) = self.opened_file.clone() {
+                    self.opened_file = Some(VaultIndexEntry {
+                        id: index_entry.id,
+                        name: self.temp_note_name.clone(),
+                        entry_type: VaultIndexEntryType::Note,
+                        parent_folder: None,
+                    });
 
-                        self.opened_file = Some(new_index_entry);
-                        self.edit_name = false;
-                    }
-
-                    None => {}
+                    self.edit_name = false;
                 }
             }
 
@@ -365,18 +384,33 @@ impl Editor {
                     return Task::none();
                 }
 
-                match save_note_to_vault(note_name, text, vault_name) {
-                    Ok(()) => { println!("File saved!"); }
+                // TODO: encrypt the text here
+
+                match save_note_to_vault(&note_name, text, &vault_name) {
+                    Ok(()) => {
+                        println!("File saved! Trying to save index");
+
+                        let _ = set_vault_index(&vault_name, &self.vault_index);
+                    }
                     Err(e) => { eprintln!("Error while saving file: {}", e); }
                 }
             }
 
             EditorMessage::New => {
-                self.opened_file = Some(VaultIndexEntry {
-                    id: 0,
+                let vault_index_entry = VaultIndexEntry {
+                    id: self.vault_index.last_id + 1,
                     name: String::from("Untitled Note"),
+                    entry_type: VaultIndexEntryType::Note,
                     parent_folder: None,
-                });
+                };
+
+                self.opened_file = Some(vault_index_entry.clone());
+                self.vault_index.entries.push(vault_index_entry);
+            }
+
+            EditorMessage::OpenNote(vault_index_entry) => {
+                self.opened_file = Some(vault_index_entry.clone());
+                println!("Request to open note with id: {}", vault_index_entry.id);
             }
 
             // EditorMessage::PVLoading => {
@@ -460,6 +494,28 @@ impl Editor {
                 a: 1.0
             })),
             ..container::Style::default()
+        };
+
+        let note_explorer_style_active = button::Style {
+            background: Some(Background::Color(Color {
+                r: 0.05,
+                g: 0.09,
+                b: 0.11,
+                a: 1.0
+            })),
+            text_color: Color::WHITE,
+            ..button::Style::default()
+        };
+
+        let note_explorer_style_hovered = button::Style {
+            background: Some(Background::Color(Color {
+                r: 0.125,
+                g: 0.223,
+                b: 0.27,
+                a: 1.0
+            })),
+            text_color: Color::WHITE,
+            ..button::Style::default()
         };
 
         match self.screen {
@@ -575,8 +631,8 @@ impl Editor {
                                     .into()
                             }
                         } else {
-                            if self.explorer_files.is_empty() {
-                                container(text!("This shows the notes here..."))
+                            if self.vault_index.entries.is_empty() {
+                                container(text!("You will see notes here once you save them!"))
                                     .style(move |_| style)
                                     .height(Fill)
                                     .width(Fill)
@@ -584,7 +640,28 @@ impl Editor {
                                     .align_y(Center)
                                     .into()
                             } else {
-                                container(text!("WIP"))
+                                container(
+                                    scrollable(column(
+                                    self.vault_index.entries
+                                        .iter()
+                                        .map(|entry|
+                                            button(Text::new(&entry.name))
+                                            .on_press(EditorMessage::OpenNote(entry.clone()))
+                                            .width(Fill)
+                                            .style(move |_, status: button::Status|
+                                                match status {
+                                                    button::Status::Active => note_explorer_style_active,
+                                                    button::Status::Hovered => note_explorer_style_hovered,
+                                                    button::Status::Pressed => note_explorer_style_hovered,
+                                                    button::Status::Disabled => note_explorer_style_active,
+                                                }
+                                            )
+                                            .into()
+                                        )
+                                ))
+                                    .height(Fill)
+                                    .width(Fill)
+                                )
                                     .style(move |_| style)
                                     .into()
                             }

@@ -25,10 +25,9 @@ use argon2:: {
 };
 
 use crate::{
-    types::vault_info::VaultInfo,
+    types::{vault_index::VaultIndex, vault_index_entry::VaultIndexEntry, vault_info::VaultInfo},
     utils::{
-        create_secure_notes_directories, get_local_dir, get_vault_dir,
-        get_default_vault_file_path, create_default_vault_file, vault_exists,
+        create_default_vault_file, create_secure_notes_directories, get_default_vault_file_path, get_local_dir, get_vault_dir, get_vault_index_dir, vault_exists
     },
 };
 
@@ -293,18 +292,21 @@ pub fn authenticate_vault(name: &str, password: &str) -> bool {
 }
 
 pub fn save_note_to_vault(
-    note_name: String,
+    note_name: &String,
     text: String,
-    vault_name: String,
+    vault_name: &String,
 ) -> Result<(), std::io::Error> {
-    match get_vault_dir(vault_name) {
+    match get_vault_dir(vault_name.clone()) {
         Some(mut path) => {
             path.push("notes");
-            path.push(note_name);
+            path.push(note_name.clone());
 
             if let Some(file_path) = path.to_str() {
                 return match write(file_path, text) {
-                    Ok(_) => Ok(()),
+                    Ok(_) => {
+
+                        Ok(())
+                    }
 
                     Err(e) => Err(e),
                 };
@@ -315,5 +317,76 @@ pub fn save_note_to_vault(
 
         None => Err(std::io::Error::from(std::io::ErrorKind::NotFound))
     }
+}
+
+/// Reads the vault index file, and returns the deserialized object
+pub fn get_vault_index(vault_name: &String) -> Result<VaultIndex, std::io::Error> {
+    if let Some(path) = get_vault_index_dir(vault_name) {
+        if let Some(file_path) = path.to_str() {
+            match read(file_path) {
+                Ok(bytes) => {
+                    if bytes.is_empty() {
+                        println!("Vault index is empty!");
+                        return Ok(VaultIndex::default());
+                    }
+
+                    if let Ok(reader) = Reader::get_root(bytes.as_slice()) {
+                        if let Ok(vault_index) = VaultIndex::deserialize(reader) {
+                            return Ok(vault_index);
+                        }
+                    }
+
+                    println!("Other Index error");
+
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other, "Other Error"
+                    ));
+                }
+
+                Err(e) => {
+                    eprintln!("Other Index error: {}", e);
+                    return Err(e);
+                }
+            };
+        }
+
+        println!("Invalid Index data");
+        return Err(std::io::Error::from(std::io::ErrorKind::InvalidData));
+    }
+
+    println!("Index not found");
+
+    Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+}
+
+/// Serializes `vault_index` into vault index file.
+pub fn set_vault_index(
+    vault_name: &String,
+    vault_index: &VaultIndex,
+) -> Result<(), std::io::Error> {
+    if let Some(path) = get_vault_index_dir(&vault_name) {
+        let mut serializer = FlexbufferSerializer::new();
+
+        match vault_index.serialize(&mut serializer) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("{}", e);
+            }
+        }
+
+        match write(path, serializer.view()) {
+            Ok(_) => {
+                println!("Index written");
+                return Ok(());
+            }
+
+            Err(e) => {
+                eprintln!("{}", e);
+                return Err(e);
+            }
+        }
+    }
+
+    Err(std::io::Error::from(std::io::ErrorKind::NotFound))
 }
 
