@@ -20,13 +20,13 @@ use iced::{
 use crate::{
     types::{
         vault_index_entry::{ VaultIndexEntry, VaultIndexEntryType },
-        DefaultVaultFileError, vault_index::VaultIndex,
+        VaultError, vault_index::VaultIndex,
     },
     utils::{
         get_default_vault_name,
         vault::{
             authenticate_vault, save_note_to_vault, get_vault_index,
-            set_vault_index,
+            set_vault_index, build_vault_index,
         }
     },
 };
@@ -168,25 +168,20 @@ impl Editor {
 
             Err(e) => {
                 match e {
-                    DefaultVaultFileError::OSError(_s) => {
-                        // TODO: show an error message to the user
+                    VaultError::NoIndex(vault_name) => {
+                        eprintln!("Index not found, will build index from scratch...");
+
+                        let _ = build_vault_index(&vault_name);
+
+                        screen = EditorScreen::PasswordPrompt;
+                        opened_vault= Some(vault_name);
                     }
 
-                    DefaultVaultFileError::FirstLineEmpty => {
-                        eprintln!("First line empty!");
-                    }
-
-                    DefaultVaultFileError::VaultDoesNotExist => {
-                        eprintln!("Vault does not exist!");
-                    }
-
-                    DefaultVaultFileError::FileDoesNotExist => {
-                        eprintln!("Default vault file does not exist!");
+                    _ => {
+                        screen = EditorScreen::VaultSelectionPrompt;
+                        opened_vault = None;
                     }
                 }
-
-                screen = EditorScreen::VaultSelectionPrompt;
-                opened_vault = None;
             }
         }
 
@@ -363,6 +358,13 @@ impl Editor {
                         parent_folder: None,
                     });
 
+                    for index in self.vault_index.entries.iter_mut() {
+                        if index.id == index_entry.id {
+                            index.name = self.temp_note_name.clone();
+                            break;
+                        }
+                    }
+
                     self.edit_name = false;
                 }
             }
@@ -404,8 +406,12 @@ impl Editor {
                     parent_folder: None,
                 };
 
+                println!("Creating new note with id: {}", vault_index_entry.id);
+
                 self.opened_file = Some(vault_index_entry.clone());
                 self.vault_index.entries.push(vault_index_entry);
+
+                self.vault_index.last_id += 1;
             }
 
             EditorMessage::OpenNote(vault_index_entry) => {

@@ -3,7 +3,7 @@ pub mod vault;
 use std::{ fs::{ create_dir_all, read_to_string, File }, path::{ Path, PathBuf }, io::Write };
 use dirs_next::data_local_dir;
 
-use crate::types::DefaultVaultFileError;
+use crate::types::VaultError;
 
 pub fn is_first_start() -> bool {
     match get_local_dir() {
@@ -52,8 +52,8 @@ pub fn get_vault_dir(vault_name: String) -> Option<PathBuf> {
     }
 }
 
-// Gets the path of the index file of the vault.
-pub fn get_vault_index_dir(vault_name: &String) -> Option<PathBuf> {
+/// Gets the path of the index file of the vault.
+pub fn get_vault_index_path(vault_name: &String) -> Option<PathBuf> {
     if let Some(mut path) = get_vault_dir(vault_name.clone()) {
         path.push("index");
         return Some(path);
@@ -67,26 +67,34 @@ pub fn get_vault_index_dir(vault_name: &String) -> Option<PathBuf> {
 /// Does this by checking if a directory with the vault name exists inside the
 /// "vaults" directory in the secure-notes local directory and also checks if
 /// files "index" and "info" are also present inside the vault directory.
-pub fn vault_exists(name: &str) -> bool {
+pub fn vault_exists(name: &str) -> Result<(), VaultError> {
     if let Some(mut dir_path) = get_local_dir() {
         dir_path.push("vaults");
         dir_path.push(name);
 
-        if dir_path.as_path().exists() {
-            dir_path.push("index");
-
-            if dir_path.as_path().exists() {
-                dir_path.pop();
-                dir_path.push("info");
-
-                return dir_path.as_path().exists();
-            }
-
-            // TODO: Show an error that says "vault is corrupted" to the user.
+        if !dir_path.as_path().exists() {
+            return Err(VaultError::DoesNotExist);
         }
+
+        dir_path.push("index");
+
+        if !dir_path.as_path().exists() {
+            return Err(VaultError::NoIndex(name.to_owned()));
+        }
+
+        dir_path.pop();
+        dir_path.push("info");
+
+        if !dir_path.as_path().exists() {
+            return Err(VaultError::NoInfo);
+        }
+
+        return Ok(());
+
+        // TODO: Show an error that says "vault is corrupted" to the user.
     }
 
-    false
+    return Err(VaultError::NoLocalDir);
 }
 
 pub fn create_secure_notes_directories(path: &PathBuf) -> Result<(), String> {
@@ -185,7 +193,7 @@ pub fn get_default_vault_file_path() -> Option<String> {
 /// the first line is considered.
 ///
 /// For more information see: [`create_default_vault_file`].
-pub fn get_default_vault_name() -> Result<String, DefaultVaultFileError> {
+pub fn get_default_vault_name() -> Result<String, VaultError> {
     let default_file_path;
 
     match get_default_vault_file_path() {
@@ -194,7 +202,7 @@ pub fn get_default_vault_name() -> Result<String, DefaultVaultFileError> {
         }
 
         None => {
-            return Err(DefaultVaultFileError::FileDoesNotExist);
+            return Err(VaultError::NoDefault);
         }
     }
 
@@ -203,21 +211,20 @@ pub fn get_default_vault_name() -> Result<String, DefaultVaultFileError> {
             let vault_name_lines = file_name.split("\n").collect::<Vec<&str>>();
 
             if vault_name_lines.is_empty() {
-                return Err(DefaultVaultFileError::FirstLineEmpty);
+                return Err(VaultError::DefaultFileFirstLineEmpty);
             }
 
             let vault_name = vault_name_lines[0];
 
-            if vault_exists(vault_name) {
-                return Ok(String::from(vault_name))
+            match vault_exists(vault_name) {
+                Ok(_) => Ok(String::from(vault_name)),
+                Err(e) => Err(e),
             }
-
-            Err(DefaultVaultFileError::VaultDoesNotExist)
         }
 
         Err(e) => {
             eprintln!("Error when getting the default vault file name: {}", e);
-            Err(DefaultVaultFileError::OSError(e.to_string()))
+            Err(VaultError::OSError(e.to_string()))
         }
     }
 }

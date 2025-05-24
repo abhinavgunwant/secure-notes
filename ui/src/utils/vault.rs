@@ -25,9 +25,11 @@ use argon2:: {
 };
 
 use crate::{
-    types::{vault_index::VaultIndex, vault_index_entry::VaultIndexEntry, vault_info::VaultInfo},
+    types::{ VaultError, vault_index::VaultIndex, vault_info::VaultInfo },
     utils::{
-        create_default_vault_file, create_secure_notes_directories, get_default_vault_file_path, get_local_dir, get_vault_dir, get_vault_index_dir, vault_exists
+        create_default_vault_file, create_secure_notes_directories,
+        get_default_vault_file_path, get_local_dir, get_vault_dir,
+        get_vault_index_path, vault_exists,
     },
 };
 
@@ -227,8 +229,11 @@ fn get_argon<'a>() -> Argon2<'a> {
 
 /// Authenticates access to the vault by verifying the password
 pub fn authenticate_vault(name: &str, password: &str) -> bool {
-    if !vault_exists(name) {
-        return false;
+    if let Err(e) = vault_exists(name) {
+        match e {
+            VaultError::NoIndex(_) => { }
+            _ => { return false; }
+        }
     }
 
     match get_local_dir() {
@@ -321,7 +326,7 @@ pub fn save_note_to_vault(
 
 /// Reads the vault index file, and returns the deserialized object
 pub fn get_vault_index(vault_name: &String) -> Result<VaultIndex, std::io::Error> {
-    if let Some(path) = get_vault_index_dir(vault_name) {
+    if let Some(path) = get_vault_index_path(vault_name) {
         if let Some(file_path) = path.to_str() {
             match read(file_path) {
                 Ok(bytes) => {
@@ -364,7 +369,7 @@ pub fn set_vault_index(
     vault_name: &String,
     vault_index: &VaultIndex,
 ) -> Result<(), std::io::Error> {
-    if let Some(path) = get_vault_index_dir(&vault_name) {
+    if let Some(path) = get_vault_index_path(&vault_name) {
         let mut serializer = FlexbufferSerializer::new();
 
         match vault_index.serialize(&mut serializer) {
@@ -385,6 +390,18 @@ pub fn set_vault_index(
                 return Err(e);
             }
         }
+    }
+
+    Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+}
+
+/// Builds entire vault index from scratch
+///
+/// TODO: Implement it.
+/// For now it just builds an empty index
+pub fn build_vault_index(vault_name: &String) -> Result<(), std::io::Error> {
+    if let Some(_path) = get_vault_index_path(vault_name) {
+        return set_vault_index(vault_name, &VaultIndex::default());
     }
 
     Err(std::io::Error::from(std::io::ErrorKind::NotFound))
