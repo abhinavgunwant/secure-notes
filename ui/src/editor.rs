@@ -9,12 +9,12 @@ use iced::{
     keyboard::{ key::Key, Event::KeyPressed },
     widget::{
         button, column, row, container, pane_grid, responsive, text,
-        text_editor, text_editor::{Action, Content}, text_input, Space, svg,
+        text_editor, text_editor::{ Action, Content }, text_input, Space, svg,
         scrollable, Column, Button, Text,
     },
     event::{ self, Event },
     Background, Center, Color, Element, Fill, Subscription, stream::channel,
-    Task,
+    Task, font,
 };
 
 use crate::{
@@ -29,6 +29,7 @@ use crate::{
             set_vault_index, build_vault_index,
         }
     },
+    styles::{ EDITOR_BACKGROUND, EDITOR_BORDER },
 };
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -576,6 +577,14 @@ impl Editor {
                                     ui_column = ui_column.push(row![
                                         text_input("", self.temp_note_name.as_str())
                                             .size(18)
+                                            .style(move |_, _| text_input::Style {
+                                                background: Background::Color(EDITOR_BACKGROUND),
+                                                border: EDITOR_BORDER,
+                                                icon: Color::WHITE,
+                                                placeholder: Color::WHITE,
+                                                value: Color::WHITE,
+                                                selection: Color::BLACK,
+                                            })
                                             .on_input(
                                                 EditorMessage::NoteNameChanged
                                             )
@@ -629,6 +638,14 @@ impl Editor {
                                 ui_column = ui_column.push(
                                     text_editor(&self.content)
                                         .on_action(EditorMessage::ActionPerformed)
+                                        .style(move |_, _| text_editor::Style {
+                                            background: Background::Color(EDITOR_BACKGROUND),
+                                            border: EDITOR_BORDER,
+                                            icon: Color::WHITE,
+                                            placeholder: Color::WHITE,
+                                            value: Color::WHITE,
+                                            selection: Color::BLACK,
+                                        } )
                                         .height(Fill)
                                 );
 
