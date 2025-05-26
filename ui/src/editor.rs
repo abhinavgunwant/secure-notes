@@ -14,7 +14,7 @@ use iced::{
     },
     event::{ self, Event },
     Background, Center, Color, Element, Fill, Subscription, stream::channel,
-    Task, font,
+    Task, font, Theme,
 };
 
 use crate::{
@@ -29,7 +29,7 @@ use crate::{
             set_vault_index, build_vault_index,
         }
     },
-    styles::{ EDITOR_BACKGROUND, EDITOR_BORDER },
+    styles::{ get_app_styles },
 };
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -487,43 +487,12 @@ impl Editor {
 
     pub fn view(&self) -> Element<EditorMessage> {
         let vault_name;
+        let app_styles = get_app_styles(&Theme::Dark);
 
         match self.opened_vault.clone() {
             Some(v_name) => { vault_name = v_name; }
             None => { vault_name = String::default(); }
         }
-
-        let style = container::Style {
-            background: Some(Background::Color(Color {
-                r: 0.05,
-                g: 0.09,
-                b: 0.11,
-                a: 1.0
-            })),
-            ..container::Style::default()
-        };
-
-        let note_explorer_style_active = button::Style {
-            background: Some(Background::Color(Color {
-                r: 0.05,
-                g: 0.09,
-                b: 0.11,
-                a: 1.0
-            })),
-            text_color: Color::WHITE,
-            ..button::Style::default()
-        };
-
-        let note_explorer_style_hovered = button::Style {
-            background: Some(Background::Color(Color {
-                r: 0.125,
-                g: 0.223,
-                b: 0.27,
-                a: 1.0
-            })),
-            text_color: Color::WHITE,
-            ..button::Style::default()
-        };
 
         match self.screen {
             EditorScreen::Editor => {
@@ -532,16 +501,6 @@ impl Editor {
 
                     let mut pane_grid_content = pane_grid::Content::new(responsive(move |_size|{
                         if pane.pane_type == PaneType::TextEditor {
-                            let _style = container::Style {
-                                background: Some(Background::Color(Color {
-                                    r: 0.054,
-                                    g: 0.1,
-                                    b: 0.14,
-                                    a: 1.0,
-                                })),
-                                ..container::Style::default()
-                            };
-
                             if self.opened_file == None {
                                 container(column![
                                     text("Select a file from the explorer on the left to view/edit!")
@@ -556,7 +515,7 @@ impl Editor {
                                         .width(Fill)
                                         .center(),
                                 ])
-                                    .style(move |_| _style)
+                                    .style(move |_| app_styles.editor_bg)
                                     .width(Fill)
                                     .height(Fill)
                                     .align_x(Center)
@@ -578,12 +537,12 @@ impl Editor {
                                         text_input("", self.temp_note_name.as_str())
                                             .size(18)
                                             .style(move |_, _| text_input::Style {
-                                                background: Background::Color(EDITOR_BACKGROUND),
-                                                border: EDITOR_BORDER,
+                                                background: Background::Color(app_styles.editor_bg_color),
+                                                border: app_styles.editor_border,
                                                 icon: Color::WHITE,
                                                 placeholder: Color::WHITE,
                                                 value: Color::WHITE,
-                                                selection: Color::BLACK,
+                                                selection: app_styles.editor_sel_color,
                                             })
                                             .on_input(
                                                 EditorMessage::NoteNameChanged
@@ -639,24 +598,24 @@ impl Editor {
                                     text_editor(&self.content)
                                         .on_action(EditorMessage::ActionPerformed)
                                         .style(move |_, _| text_editor::Style {
-                                            background: Background::Color(EDITOR_BACKGROUND),
-                                            border: EDITOR_BORDER,
+                                            background: Background::Color(app_styles.editor_bg_color),
+                                            border: app_styles.editor_border,
                                             icon: Color::WHITE,
                                             placeholder: Color::WHITE,
                                             value: Color::WHITE,
-                                            selection: Color::BLACK,
+                                            selection: app_styles.editor_sel_color,
                                         } )
                                         .height(Fill)
                                 );
 
                                 container(ui_column)
-                                    .style(move |_| _style)
+                                    .style(move |_| app_styles.editor_bg)
                                     .into()
                             }
                         } else {
                             if self.vault_index.entries.is_empty() {
                                 container(text!("You will see notes here once you save them!"))
-                                    .style(move |_| style)
+                                    .style(move |_| app_styles.editor_bg)
                                     .height(Fill)
                                     .width(Fill)
                                     .align_x(Center)
@@ -673,10 +632,10 @@ impl Editor {
                                             .width(Fill)
                                             .style(move |_, status: button::Status|
                                                 match status {
-                                                    button::Status::Active => note_explorer_style_active,
-                                                    button::Status::Hovered => note_explorer_style_hovered,
-                                                    button::Status::Pressed => note_explorer_style_hovered,
-                                                    button::Status::Disabled => note_explorer_style_active,
+                                                    button::Status::Active => app_styles.explorer_notes,
+                                                    button::Status::Hovered => app_styles.explorer_notes_hovered,
+                                                    button::Status::Pressed => app_styles.explorer_notes_hovered,
+                                                    button::Status::Disabled => app_styles.explorer_notes,
                                                 }
                                             )
                                             .into()
@@ -685,7 +644,10 @@ impl Editor {
                                     .height(Fill)
                                     .width(Fill)
                                 )
-                                    .style(move |_| style)
+                                    .style(move |_| container::Style {
+                                        background: Some(app_styles.explorer_bg_color),
+                                        ..container::Style::default()
+                                    })
                                     .into()
                             }
                         }
@@ -695,12 +657,7 @@ impl Editor {
                         pane_grid_content = pane_grid_content.title_bar(
                             pane_grid::TitleBar::new(text!("Vault: {}", vault_name))
                                 .style(|_| container::Style {
-                                    background: Some(Background::Color(Color{
-                                        r: 0.04,
-                                        g: 0.05,
-                                        b: 0.07,
-                                        a: 1.0,
-                                    })),
+                                    background: Some(Background::Color(Color::BLACK)),
                                     ..container::Style::default()
                                 })
                         );
@@ -799,7 +756,7 @@ impl Editor {
                 }
 
                 container(cols)
-                    .style(move |_| style)
+                    .style(move |_| app_styles.editor_bg)
                     .width(Fill)
                     .height(Fill)
                     .into()
