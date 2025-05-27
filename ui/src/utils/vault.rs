@@ -12,7 +12,7 @@
 /// - A directory named "notes" that contains all the encrypted notes.
 ///
 use std::{
-    fs::{ File, create_dir_all, read, write }, io::Write, path::PathBuf,
+    fs::{ File, create_dir_all, read, write }, io::Write, path::{ Path, PathBuf },
 };
 use serde::{ Serialize, Deserialize };
 use flexbuffers::{ FlexbufferSerializer, Reader };
@@ -25,7 +25,7 @@ use argon2:: {
 };
 
 use crate::{
-    types::{ VaultError, vault_index::VaultIndex, vault_info::VaultInfo },
+    types::{ note::Note, vault_index::VaultIndex, vault_info::VaultInfo, VaultError },
     utils::{
         create_default_vault_file, create_secure_notes_directories,
         get_default_vault_file_path, get_local_dir, get_vault_dir,
@@ -296,32 +296,121 @@ pub fn authenticate_vault(name: &str, password: &str) -> bool {
     return false;
 }
 
-pub fn save_note_to_vault(
-    note_name: &String,
-    text: String,
-    vault_name: &String,
-) -> Result<(), std::io::Error> {
+fn get_relative_note_path(note_id: u32) -> Vec<String> {
+    let mut path_str_vec: Vec<String> = Vec::with_capacity(4);
+
+    let raw_str = format!("{:08x}", note_id);
+    let mut str_chars = raw_str.chars();
+
+    for _ in 0..4 {
+        let mut s = String::with_capacity(2);
+
+        if let Some(c) = str_chars.next() { s.push(c); }
+        if let Some(c) = str_chars.next() { s.push(c); }
+
+        path_str_vec.push(s);
+    }
+
+    path_str_vec
+}
+
+fn get_note_path(vault_name: &String, note_id: u32) -> Result<String, std::io::Error>{
     match get_vault_dir(vault_name.clone()) {
         Some(mut path) => {
             path.push("notes");
-            path.push(note_name.clone());
 
-            if let Some(file_path) = path.to_str() {
-                return match write(file_path, text) {
-                    Ok(_) => {
+            println!("got id: {}", note_id);
 
-                        Ok(())
-                    }
-
-                    Err(e) => Err(e),
-                };
+            for p in get_relative_note_path(note_id).iter() {
+                path.push(p);
             }
 
-            return Err(std::io::Error::from(std::io::ErrorKind::InvalidData));
+            println!("note path: {:?}", path);
+
+            if let Some(file_path) = path.to_str() {
+                return Ok(file_path.to_owned());
+            }
+
+            Err(std::io::Error::from(std::io::ErrorKind::InvalidData))
         }
 
         None => Err(std::io::Error::from(std::io::ErrorKind::NotFound))
     }
+}
+
+pub fn save_note_to_vault(
+    vault_name: &String,
+    note: &Note,
+) -> Result<(), std::io::Error> {
+    match get_note_path(vault_name, note.id) {
+        Ok(path) => {
+            let mut p = PathBuf::from(&path);
+            p.pop();
+
+            if !p.exists() {
+                match create_dir_all(p) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Error creating dirs: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+            
+            let mut serializer = FlexbufferSerializer::new();
+
+            if let Err(e) = note.serialize(&mut serializer) {
+                eprintln!("{}", e);
+                return Err(std::io::Error::from(std::io::ErrorKind::Other));
+            }
+
+            match write(path.as_str(), serializer.view()) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+
+        Err(e) => Err(e),
+    }
+}
+
+pub fn open_note(vault_name: &String, id: u32) -> Result<Note, std::io::Error> {
+    if let Some(mut path) = get_vault_dir(vault_name.clone()) {
+        path.push("notes");
+
+        println!("got id: {}", id);
+
+        for p in get_relative_note_path(id).iter() {
+            path.push(p);
+        }
+
+        println!("note path: {:?}", path);
+
+        if let Some(file_path) = path.to_str() {
+            match read(file_path) {
+                Ok(bytes) => {
+                    if bytes.is_empty() {
+                        return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+                    }
+
+                    if let Ok(reader) = Reader::get_root(bytes.as_slice()) {
+                        if let Ok(note) = Note::deserialize(reader) {
+                            return Ok(note);
+                        }
+                    }
+
+                    return Err(std::io::Error::from(std::io::ErrorKind::Other));
+                }
+
+                Err(e) => {
+                    eprintln!("Error reading note: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    Err(std::io::Error::from(std::io::ErrorKind::NotFound))
 }
 
 /// Reads the vault index file, and returns the deserialized object

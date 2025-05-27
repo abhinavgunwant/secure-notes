@@ -18,18 +18,15 @@ use iced::{
 };
 
 use crate::{
-    types::{
-        vault_index_entry::{ VaultIndexEntry, VaultIndexEntryType },
-        VaultError, vault_index::VaultIndex,
-    },
-    utils::{
+    styles::get_app_styles, types::{
+        note::Note, vault_index::VaultIndex, vault_index_entry::{ VaultIndexEntry, VaultIndexEntryType }, VaultError
+    }, utils::{
         get_default_vault_name,
         vault::{
-            authenticate_vault, save_note_to_vault, get_vault_index,
-            set_vault_index, build_vault_index,
+            authenticate_vault, build_vault_index, get_vault_index,
+            save_note_to_vault, set_vault_index, open_note,
         }
-    },
-    styles::{ get_app_styles },
+    }
 };
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -372,11 +369,14 @@ impl Editor {
 
             EditorMessage::Save => {
                 let text = self.content.text();
+
                 let note_name;
                 let vault_name;
+                let vault_id;
 
-                if let Some(n_name) = self.opened_file.clone() {
-                    note_name = n_name.name;
+                if let Some(v_indx) = self.opened_file.clone() {
+                    note_name = v_indx.name;
+                    vault_id = v_indx.id;
                 } else {
                     return Task::none();
                 }
@@ -387,9 +387,11 @@ impl Editor {
                     return Task::none();
                 }
 
+                let note: Note = Note::new(vault_id, note_name, text);
+
                 // TODO: encrypt the text here
 
-                match save_note_to_vault(&note_name, text, &vault_name) {
+                match save_note_to_vault(&vault_name, &note) {
                     Ok(()) => {
                         println!("File saved! Trying to save index");
 
@@ -413,10 +415,24 @@ impl Editor {
                 self.vault_index.entries.push(vault_index_entry);
 
                 self.vault_index.last_id += 1;
+                self.content = Content::new();
             }
 
             EditorMessage::OpenNote(vault_index_entry) => {
                 self.opened_file = Some(vault_index_entry.clone());
+
+                if let Some(vault_name) = &self.opened_vault {
+                    match open_note(&vault_name, vault_index_entry.id) {
+                        Ok(note) => {
+                            self.content = Content::with_text(note.text.as_str());
+                        }
+
+                        Err(e) => {
+                            eprintln!("Error while trying to open note: {}", e);
+                        }
+                    }
+                }
+
                 println!("Request to open note with id: {}", vault_index_entry.id);
             }
 
@@ -615,7 +631,10 @@ impl Editor {
                         } else {
                             if self.vault_index.entries.is_empty() {
                                 container(text!("You will see notes here once you save them!"))
-                                    .style(move |_| app_styles.editor_bg)
+                                    .style(move |_| container::Style {
+                                        background: Some(app_styles.explorer_bg_color),
+                                        ..container::Style::default()
+                                    })
                                     .height(Fill)
                                     .width(Fill)
                                     .align_x(Center)
